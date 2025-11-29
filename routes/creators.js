@@ -8,6 +8,7 @@ import {
   deleteCreator,
   checkUsernameAvailability
 } from '../controllers/creatorController.js';
+import { protect, optionalAuth } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -45,8 +46,8 @@ const creatorValidation = [
 router.get('/', getAllCreators);
 router.get('/check-username/:username', checkUsernameAvailability);
 router.get('/:username', getCreatorByUsername);
-router.post('/', creatorValidation, createCreator);
-router.put('/:username', creatorValidation, updateCreator);
-router.delete('/:username', deleteCreator);
+router.post('/', protect, creatorValidation, createCreator);
+router.put('/:username', protect, creatorValidation, updateCreator);
+router.delete('/:username', protect, deleteCreator);
 
 export default router;
