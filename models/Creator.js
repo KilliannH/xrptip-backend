@@ -37,6 +37,10 @@ const creatorSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  bannerUrl: {
+    type: String,
+    default: ''
+  },
   links: {
     twitter: {
       type: String,
@@ -100,6 +104,7 @@ creatorSchema.methods.toPublicJSON = function() {
     bio: this.bio,
     xrpAddress: this.xrpAddress,
     avatarUrl: this.avatarUrl,
+    bannerUrl: this.bannerUrl,
     links: this.links,
     stats: this.stats,
     createdAt: this.createdAt

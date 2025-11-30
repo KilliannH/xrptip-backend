@@ -137,7 +137,7 @@ export const createCreator = async (req, res) => {
       });
     }
 
-    const { username, displayName, bio, xrpAddress, avatarUrl, links } = req.body;
+    const { username, displayName, bio, xrpAddress, avatarUrl, bannerUrl, links } = req.body;
 
     // Vérifier si l'utilisateur a déjà un profil créateur
     const User = (await import('../models/User.js')).default;
@@ -173,6 +173,7 @@ export const createCreator = async (req, res) => {
       bio,
       xrpAddress,
       avatarUrl: avatarUrl || '',
+      bannerUrl: bannerUrl || '',
       links: {
         twitter: links?.twitter || '',
         twitch: links?.twitch || ''
@@ -224,7 +225,7 @@ export const updateCreator = async (req, res) => {
     }
 
     const { username } = req.params;
-    const { displayName, bio, xrpAddress, avatarUrl, links } = req.body;
+    const { displayName, bio, xrpAddress, avatarUrl, bannerUrl, links } = req.body;
 
     const creator = await Creator.findOne({ 
       username: username.toLowerCase() 
@@ -253,6 +254,7 @@ export const updateCreator = async (req, res) => {
     creator.bio = bio;
     creator.xrpAddress = xrpAddress;
     creator.avatarUrl = avatarUrl || '';
+    creator.bannerUrl = bannerUrl || '';
     creator.links = {
       twitter: links?.twitter || '',
       twitch: links?.twitch || ''

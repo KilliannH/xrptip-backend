@@ -143,6 +143,7 @@ class XRPLService {
       }
 
       console.log(`🔄 Syncing transactions for ${creator.username}...`);
+      console.log(`📍 XRP Address: ${creator.xrpAddress}`);
 
       // Récupérer les transactions
       const transactions = await xrplClient.getAccountTransactions(
@@ -156,42 +157,67 @@ class XRPLService {
       let newTips = 0;
       let updatedTips = 0;
 
+      console.log(`📊 Found ${transactions.length} transactions to process`);
+
       for (const txData of transactions) {
-        const tx = txData.tx;
-        
-        // Ignorer si ce n'est pas un paiement entrant
-        if (tx.TransactionType !== 'Payment' || 
-            tx.Destination !== creator.xrpAddress ||
-            txData.meta?.TransactionResult !== 'tesSUCCESS') {
+        try {
+          // La structure de réponse utilise tx_json au lieu de tx
+          if (!txData || (!txData.tx && !txData.tx_json)) {
+            console.warn('⚠️ Invalid transaction data - no tx or tx_json field');
+            continue;
+          }
+
+          // Utiliser tx_json si disponible, sinon tx (compatibilité)
+          const tx = txData.tx_json || txData.tx;
+          
+          // Ignorer si ce n'est pas un paiement entrant
+          if (tx.TransactionType !== 'Payment' || 
+              tx.Destination !== creator.xrpAddress ||
+              txData.meta?.TransactionResult !== 'tesSUCCESS') {
+            console.log(`⏭️ Skipping tx: Type=${tx.TransactionType}, Dest=${tx.Destination}, Result=${txData.meta?.TransactionResult}`);
+            continue;
+          }
+
+          const txHash = txData.hash; // Le hash est au niveau racine de txData
+          
+          // Utiliser DeliverMax ou Amount pour le montant
+          const amountDrops = tx.DeliverMax || tx.Amount;
+          const amount = xrplClient.dropsToXrp(amountDrops);
+          const senderAddress = tx.Account;
+
+          console.log(`💰 Processing payment: ${amount} XRP from ${senderAddress}`);
+
+          // Vérifier si ce tip existe déjà
+          const existingTip = await Tip.findOne({ transactionHash: txHash });
+
+          if (!existingTip) {
+            // Créer un nouveau tip
+            const tip = new Tip({
+              creator: creator._id,
+              creatorUsername: creator.username,
+              amount,
+              senderAddress,
+              status: 'confirmed',
+              transactionHash: txHash,
+              ledgerIndex: txData.ledger_index,
+              confirmedAt: xrplClient.rippleTimeToDate(tx.date)
+            });
+
+            await tip.save();
+            newTips++;
+            console.log(`✅ Created new tip: ${txHash}`);
+          } else if (existingTip.status === 'pending') {
+            // Confirmer un tip existant
+            await existingTip.confirm(txHash, txData.ledger_index);
+            updatedTips++;
+            console.log(`🔄 Updated existing tip: ${txHash}`);
+          } else {
+            console.log(`⏭️ Tip already exists and confirmed: ${txHash}`);
+          }
+        } catch (txError) {
+          console.error('❌ Error processing transaction:', txError);
+          // Continue avec la prochaine transaction
           continue;
-        }
-
-        const txHash = tx.hash;
-        const amount = xrplClient.dropsToXrp(tx.Amount);
-        const senderAddress = tx.Account;
-
-        // Vérifier si ce tip existe déjà
-        const existingTip = await Tip.findOne({ transactionHash: txHash });
-
-        if (!existingTip) {
-          // Créer un nouveau tip
-          const tip = new Tip({
-            creator: creator._id,
-            creatorUsername: creator.username,
-            amount,
-            senderAddress,
-            status: 'confirmed',
-            transactionHash: txHash,
-            ledgerIndex: txData.tx.ledger_index,
-            confirmedAt: xrplClient.rippleTimeToDate(tx.date)
-          });
-
-          await tip.save();
-          newTips++;
-        } else if (existingTip.status === 'pending') {
-          // Confirmer un tip existant
-          await existingTip.confirm(txHash, txData.tx.ledger_index);
-          updatedTips++;
         }
       }
 

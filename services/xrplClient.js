@@ -183,6 +183,9 @@ class XRPLClient {
   async getAccountTransactions(address, options = {}) {
     try {
       const client = await this.getClient();
+      
+      console.log(`📥 Fetching transactions for ${address}`);
+      
       const response = await client.request({
         command: 'account_tx',
         account: address,
@@ -192,9 +195,24 @@ class XRPLClient {
         forward: options.forward || false
       });
       
+      console.log(`✅ Received ${response.result.transactions?.length || 0} transactions`);
+      
+      // Vérifier que les transactions existent
+      if (!response.result.transactions) {
+        console.warn('⚠️ No transactions array in response');
+        return [];
+      }
+      
       return response.result.transactions;
     } catch (error) {
-      console.error('Erreur lors de la récupération des transactions:', error);
+      console.error('❌ Error fetching transactions:', error.message);
+      
+      // Si le compte n'existe pas encore (pas activé)
+      if (error.data?.error === 'actNotFound') {
+        console.log('ℹ️ Account not found on ledger (not activated yet)');
+        return [];
+      }
+      
       throw error;
     }
   }
