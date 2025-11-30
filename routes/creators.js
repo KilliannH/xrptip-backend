@@ -6,7 +6,8 @@ import {
   updateCreator,
   getAllCreators,
   deleteCreator,
-  checkUsernameAvailability
+  checkUsernameAvailability,
+  getMyCreatorProfile
 } from '../controllers/creatorController.js';
 import { protect, optionalAuth } from '../middleware/auth.js';
 
@@ -44,6 +45,7 @@ const creatorValidation = [
 
 // Routes
 router.get('/', getAllCreators);
+router.get('/me/profile', protect, getMyCreatorProfile);
 router.get('/check-username/:username', checkUsernameAvailability);
 router.get('/:username', getCreatorByUsername);
 router.post('/', protect, creatorValidation, createCreator);

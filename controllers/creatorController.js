@@ -1,6 +1,34 @@
 import { validationResult } from 'express-validator';
 import Creator from '../models/Creator.js';
 
+// @desc    Get my creator profile
+// @route   GET /api/creators/me/profile
+// @access  Private
+export const getMyCreatorProfile = async (req, res) => {
+  try {
+    const User = (await import('../models/User.js')).default;
+    const user = await User.findById(req.user.id).populate('creator');
+
+    if (!user.creator) {
+      return res.status(404).json({
+        success: false,
+        message: 'Vous n\'avez pas encore de profil créateur'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: user.creator.toPublicJSON()
+    });
+  } catch (error) {
+    console.error('Error getting my creator profile:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching creator profile'
+    });
+  }
+};
+
 // @desc    Get all creators
 // @route   GET /api/creators
 // @access  Public
@@ -96,7 +124,7 @@ export const checkUsernameAvailability = async (req, res) => {
 
 // @desc    Create new creator
 // @route   POST /api/creators
-// @access  Public (TODO: Add authentication)
+// @access  Private
 export const createCreator = async (req, res) => {
   try {
     // Validate request
@@ -110,6 +138,21 @@ export const createCreator = async (req, res) => {
     }
 
     const { username, displayName, bio, xrpAddress, avatarUrl, links } = req.body;
+
+    // Vérifier si l'utilisateur a déjà un profil créateur
+    const User = (await import('../models/User.js')).default;
+    const userWithCreator = await User.findById(req.user.id).populate('creator');
+    
+    if (userWithCreator.creator) {
+      return res.status(409).json({
+        success: false,
+        message: 'Vous avez déjà un profil créateur',
+        existingCreator: {
+          username: userWithCreator.creator.username,
+          url: `/u/${userWithCreator.creator.username}`
+        }
+      });
+    }
 
     // Check if username already exists
     const existing = await Creator.findOne({ 
@@ -138,6 +181,11 @@ export const createCreator = async (req, res) => {
 
     await creator.save();
 
+    // Lier le créateur à l'utilisateur
+    userWithCreator.creator = creator._id;
+    userWithCreator.role = 'creator';
+    await userWithCreator.save();
+
     res.status(201).json({
       success: true,
       message: 'Creator profile created successfully',
@@ -163,7 +211,7 @@ export const createCreator = async (req, res) => {
 
 // @desc    Update creator
 // @route   PUT /api/creators/:username
-// @access  Private (TODO: Add authentication)
+// @access  Private
 export const updateCreator = async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -186,6 +234,17 @@ export const updateCreator = async (req, res) => {
       return res.status(404).json({
         success: false,
         message: 'Creator not found'
+      });
+    }
+
+    // Vérifier que l'utilisateur est le propriétaire du profil créateur
+    const User = (await import('../models/User.js')).default;
+    const user = await User.findById(req.user.id);
+    
+    if (!user.creator || user.creator.toString() !== creator._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Vous n\'êtes pas autorisé à modifier ce profil'
       });
     }
 
