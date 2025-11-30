@@ -233,18 +233,33 @@ class XRPLClient {
 
       // Écouter les transactions
       const listener = (data) => {
-        if (data.type === 'transaction' && 
-            data.validated === true &&
-            data.transaction.TransactionType === 'Payment' &&
-            data.transaction.Destination === address) {
+        // Valider la structure des données
+        if (!data || data.type !== 'transaction' || !data.validated) {
+          return;
+        }
+
+        // La transaction peut être dans tx_json (subscription) ou transaction (other)
+        const tx = data.tx_json || data.transaction;
+        
+        if (!tx) {
+          console.warn('⚠️ Transaction data missing in XRPL message');
+          return;
+        }
+
+        // Vérifier que c'est un paiement vers l'adresse surveillée
+        if (tx.TransactionType === 'Payment' && tx.Destination === address) {
+          
+          // Utiliser DeliverMax ou Amount pour le montant
+          const amountDrops = tx.DeliverMax || tx.Amount;
           
           const payment = {
-            hash: data.transaction.hash,
-            from: data.transaction.Account,
-            to: data.transaction.Destination,
-            amount: parseFloat(data.transaction.Amount) / 1000000,
+            hash: data.hash || tx.hash,
+            from: tx.Account,
+            to: tx.Destination,
+            amount: parseFloat(amountDrops) / 1000000,
             ledgerIndex: data.ledger_index,
-            memos: data.transaction.Memos || []
+            destinationTag: tx.DestinationTag || null,
+            memos: tx.Memos || []
           };
 
           callback(payment);

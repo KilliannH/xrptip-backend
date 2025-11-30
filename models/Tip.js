@@ -22,6 +22,7 @@ const tipSchema = new mongoose.Schema({
   },
   transactionHash: {
     type: String,
+    sparse: true, // Allow null for pending transactions
     trim: true
   },
   senderAddress: {
@@ -50,6 +51,28 @@ const tipSchema = new mongoose.Schema({
   },
   confirmedAt: {
     type: Date
+  },
+  // Redistribution fields (wallet intermédiaire)
+  redistributed: {
+    type: Boolean,
+    default: false
+  },
+  redistributionTxHash: {
+    type: String,
+    trim: true
+  },
+  platformFee: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  creatorAmount: {
+    type: Number, // Montant effectif reçu par le créateur (amount - platformFee)
+    min: 0
+  },
+  totalAmount: {
+    type: Number, // Montant total reçu sur le wallet plateforme (amount + platformFee)
+    min: 0
   }
 }, {
   timestamps: true

@@ -1,11 +1,17 @@
 import xrplClient from './xrplClient.js';
 import Tip from '../models/Tip.js';
 import Creator from '../models/Creator.js';
+import redistributionService from './redistributionService.js';
+import { PLATFORM_WALLET_CONFIG } from '../config/platformWallet.js';
 
 /**
  * Service pour gérer les transactions XRPL
  */
 class XRPLService {
+  constructor() {
+    this.platformWalletSubscription = null;
+  }
+
   /**
    * Initialiser le service et connecter au réseau XRPL
    */
@@ -13,8 +19,138 @@ class XRPLService {
     try {
       await xrplClient.connect();
       console.log('✅ XRPL Service initialized');
+
+      // Initialiser le service de redistribution
+      await redistributionService.initialize();
+
+      // Commencer à surveiller le wallet de la plateforme
+      await this.monitorPlatformWallet();
     } catch (error) {
       console.error('❌ Failed to initialize XRPL Service:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Surveiller les paiements entrants vers le wallet de la plateforme
+   */
+  async monitorPlatformWallet() {
+    try {
+      const platformAddress = PLATFORM_WALLET_CONFIG.address;
+      
+      if (!platformAddress || platformAddress === 'rPlatformWalletHere123456789') {
+        console.warn('⚠️ Platform wallet not configured - skipping monitoring');
+        return;
+      }
+
+      console.log(`👀 Monitoring platform wallet: ${platformAddress}`);
+
+      // S'abonner aux paiements vers le wallet plateforme
+      this.platformWalletSubscription = await xrplClient.subscribeToPayments(
+        platformAddress,
+        async (payment) => {
+          console.log('💰 Platform wallet received payment:', payment);
+
+          try {
+            // Extraire le destinationTag (ID numérique du créateur)
+            const destinationTag = payment.destinationTag;
+
+            if (!destinationTag) {
+              console.error('❌ No DestinationTag - cannot identify creator');
+              // Enregistrer quand même le tip comme "non attribué"
+              const unassignedTip = new Tip({
+                creator: null,
+                creatorUsername: 'unknown',
+                totalAmount: payment.amount,
+                amount: payment.amount,
+                senderAddress: payment.from,
+                status: 'confirmed',
+                transactionHash: payment.hash,
+                ledgerIndex: payment.ledgerIndex,
+                confirmedAt: new Date(),
+                redistributed: false,
+                platformFee: 0,
+                creatorAmount: 0
+              });
+              await unassignedTip.save();
+              return;
+            }
+
+            // Récupérer le créateur par destinationTag
+            const creator = await Creator.findOne({ destinationTag: destinationTag });
+
+            if (!creator) {
+              console.error(`❌ Creator with destinationTag ${destinationTag} not found`);
+              return;
+            }
+
+            // Vérifier si le tip existe déjà
+            const existingTip = await Tip.findOne({ transactionHash: payment.hash });
+            
+            if (existingTip) {
+              console.log('⚠️ Tip already processed:', payment.hash);
+              return;
+            }
+
+            // Calculer les montants (backend calcule à partir du total reçu)
+            const { calculateBackendFees } = await import('../config/platformWallet.js');
+            const { creatorAmount, platformFee } = calculateBackendFees(payment.amount);
+
+            // Créer le tip en DB
+            const tip = new Tip({
+              creator: creator._id,
+              creatorUsername: creator.username,
+              totalAmount: payment.amount,
+              amount: creatorAmount, // Montant pour le créateur
+              platformFee: platformFee,
+              creatorAmount: creatorAmount,
+              senderAddress: payment.from,
+              status: 'confirmed',
+              transactionHash: payment.hash,
+              ledgerIndex: payment.ledgerIndex,
+              confirmedAt: new Date(),
+              redistributed: false
+            });
+
+            await tip.save();
+
+            console.log(`✅ Tip recorded: ${payment.amount} XRP (creator: ${creatorAmount}, fee: ${platformFee})`);
+
+            // Déclencher la redistribution automatique
+            try {
+              const redistribution = await redistributionService.redistributeTip(
+                payment,
+                creator.xrpAddress,
+                payment.amount
+              );
+
+              // Mettre à jour le tip avec les infos de redistribution
+              tip.redistributed = true;
+              tip.redistributionTxHash = redistribution.txHash;
+              await tip.save();
+
+              // Mettre à jour les stats du créateur
+              const stats = await Tip.getCreatorStats(creator._id);
+              creator.stats = stats;
+              await creator.save();
+
+              console.log(`✅ Redistribution complete: ${redistribution.txHash}`);
+            } catch (redistError) {
+              console.error('❌ Redistribution failed:', redistError);
+              // Le tip reste en DB avec redistributed: false
+              // Peut être retraité manuellement plus tard
+            }
+
+          } catch (error) {
+            console.error('❌ Error processing platform wallet payment:', error);
+          }
+        }
+      );
+
+      console.log('✅ Platform wallet monitoring active');
+
+    } catch (error) {
+      console.error('❌ Error monitoring platform wallet:', error);
       throw error;
     }
   }
@@ -305,6 +441,18 @@ class XRPLService {
    */
   validateAddress(address) {
     return xrplClient.isValidAddress(address);
+  }
+
+  /**
+   * Arrêter tous les monitorings
+   */
+  async shutdown() {
+    if (this.platformWalletSubscription) {
+      await this.platformWalletSubscription();
+      console.log('✅ Platform wallet monitoring stopped');
+    }
+    
+    await redistributionService.disconnect();
   }
 }
 

@@ -33,6 +33,13 @@ const creatorSchema = new mongoose.Schema({
       message: 'Invalid XRP address format'
     }
   },
+  destinationTag: {
+    type: Number,
+    required: true,
+    unique: true,
+    min: 0,
+    max: 4294967295 // Max uint32
+  },
   avatarUrl: {
     type: String,
     default: ''
@@ -96,13 +103,26 @@ creatorSchema.virtual('profileUrl').get(function() {
   return `/u/${this.username}`;
 });
 
+// Pre-save hook pour générer le destinationTag automatiquement
+creatorSchema.pre('save', async function(next) {
+  // Générer destinationTag seulement si c'est un nouveau document
+  if (this.isNew && !this.destinationTag) {
+    // Convertir les 8 derniers caractères de l'ObjectId en nombre
+    const idHex = this._id.toString().slice(-8);
+    this.destinationTag = parseInt(idHex, 16) % 4294967295;
+  }
+  next();
+});
+
 // Method to safely return public profile data
 creatorSchema.methods.toPublicJSON = function() {
   return {
+    _id: this._id, // Inclure l'ID pour le frontend
     username: this.username,
     displayName: this.displayName,
     bio: this.bio,
     xrpAddress: this.xrpAddress,
+    destinationTag: this.destinationTag, // Inclure pour le QR code
     avatarUrl: this.avatarUrl,
     bannerUrl: this.bannerUrl,
     links: this.links,
