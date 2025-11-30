@@ -2,16 +2,13 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
-import dotenv from 'dotenv';
 import { connectDB } from './config/database.js';
 import creatorRoutes from './routes/creators.js';
 import tipRoutes from './routes/tips.js';
 import xrplRoutes from './routes/xrpl.js';
 import authRoutes from './routes/auth.js';
+import uploadRoutes from './routes/upload.js';
 import xrplService from './services/xrplService.js';
-
-// Load environment variables
-dotenv.config();
 
 // Initialize Express app
 const app = express();
@@ -47,6 +44,7 @@ app.get('/api/health', (req, res) => {
 
 // API Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/upload', uploadRoutes);
 app.use('/api/creators', creatorRoutes);
 app.use('/api/tips', tipRoutes);
 app.use('/api/xrpl', xrplRoutes);
