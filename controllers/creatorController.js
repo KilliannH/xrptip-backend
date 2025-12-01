@@ -166,10 +166,14 @@ export const createCreator = async (req, res) => {
       });
     }
 
+    const idHex = userWithCreator._id.toString().slice(-8);
+    const destinationTag = parseInt(idHex, 16) % 4294967295;
+
     // Create new creator
     const creator = new Creator({
       username: username.toLowerCase(),
       displayName,
+      destinationTag: destinationTag,
       bio,
       xrpAddress,
       avatarUrl: avatarUrl || '',
