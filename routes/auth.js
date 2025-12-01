@@ -8,7 +8,9 @@ import {
   updatePassword,
   forgotPassword,
   resetPassword,
-  linkCreator
+  linkCreator,
+  verifyEmail,
+  resendVerification
 } from '../controllers/authController.js';
 import { protect } from '../middleware/auth.js';
 
@@ -37,9 +39,23 @@ const loginValidation = [
     .withMessage('Mot de passe requis')
 ];
 
+const verifyEmailValidation = [
+  body('email')
+    .isEmail()
+    .withMessage('Email invalide')
+    .normalizeEmail(),
+  body('code')
+    .isLength({ min: 6, max: 6 })
+    .withMessage('Code invalide')
+    .isNumeric()
+    .withMessage('Le code doit contenir uniquement des chiffres')
+];
+
 // Routes publiques
 router.post('/register', registerValidation, register);
 router.post('/login', loginValidation, login);
+router.post('/verify-email', verifyEmailValidation, verifyEmail);
+router.post('/resend-verification', resendVerification);
 router.post('/forgot-password', forgotPassword);
 router.put('/reset-password/:resetToken', resetPassword);
 

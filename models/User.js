@@ -30,7 +30,10 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
-  emailVerificationToken: String,
+  emailVerificationCode: {
+    type: String,
+    select: false // Ne pas inclure dans les queries par défaut
+  },
   emailVerificationExpires: Date,
   passwordResetToken: String,
   passwordResetExpires: Date,
@@ -84,19 +87,15 @@ userSchema.methods.toPublicJSON = function() {
   };
 };
 
-// Méthode pour générer un token de vérification d'email
-userSchema.methods.generateEmailVerificationToken = function() {
-  const crypto = require('crypto');
-  const token = crypto.randomBytes(32).toString('hex');
+// Méthode pour générer un code de vérification d'email (6 chiffres)
+userSchema.methods.generateEmailVerificationCode = function() {
+  // Générer un code à 6 chiffres
+  const code = Math.floor(100000 + Math.random() * 900000).toString();
   
-  this.emailVerificationToken = crypto
-    .createHash('sha256')
-    .update(token)
-    .digest('hex');
+  this.emailVerificationCode = code;
+  this.emailVerificationExpires = Date.now() + 15 * 60 * 1000; // 15 minutes
   
-  this.emailVerificationExpires = Date.now() + 24 * 60 * 60 * 1000; // 24 heures
-  
-  return token;
+  return code;
 };
 
 // Méthode pour générer un token de reset de mot de passe
