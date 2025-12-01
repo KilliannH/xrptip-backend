@@ -72,9 +72,9 @@ export const getCreatorByUsername = async (req, res) => {
   try {
     const { username } = req.params;
 
-    const creator = await Creator.findOne({ 
+    const creator = await Creator.findOne({
       username: username.toLowerCase(),
-      isActive: true 
+      isActive: true
     });
 
     if (!creator) {
@@ -103,9 +103,9 @@ export const getCreatorByUsername = async (req, res) => {
 export const checkUsernameAvailability = async (req, res) => {
   try {
     const { username } = req.params;
-    
-    const existing = await Creator.findOne({ 
-      username: username.toLowerCase() 
+
+    const existing = await Creator.findOne({
+      username: username.toLowerCase()
     });
 
     res.json({
@@ -142,7 +142,7 @@ export const createCreator = async (req, res) => {
     // Vérifier si l'utilisateur a déjà un profil créateur
     const User = (await import('../models/User.js')).default;
     const userWithCreator = await User.findById(req.user.id).populate('creator');
-    
+
     if (userWithCreator.creator) {
       return res.status(409).json({
         success: false,
@@ -155,8 +155,8 @@ export const createCreator = async (req, res) => {
     }
 
     // Check if username already exists
-    const existing = await Creator.findOne({ 
-      username: username.toLowerCase() 
+    const existing = await Creator.findOne({
+      username: username.toLowerCase()
     });
 
     if (existing) {
@@ -180,7 +180,9 @@ export const createCreator = async (req, res) => {
       bannerUrl: bannerUrl || '',
       links: {
         twitter: links?.twitter || '',
-        twitch: links?.twitch || ''
+        twitch: links?.twitch || '',
+        tiktok: links?.tiktok || '',
+        youtube: links?.youtube || ''
       }
     });
 
@@ -198,7 +200,7 @@ export const createCreator = async (req, res) => {
     });
   } catch (error) {
     console.error('Error creating creator:', error);
-    
+
     if (error.name === 'ValidationError') {
       return res.status(400).json({
         success: false,
@@ -231,8 +233,8 @@ export const updateCreator = async (req, res) => {
     const { username } = req.params;
     const { displayName, bio, xrpAddress, avatarUrl, bannerUrl, links } = req.body;
 
-    const creator = await Creator.findOne({ 
-      username: username.toLowerCase() 
+    const creator = await Creator.findOne({
+      username: username.toLowerCase()
     });
 
     if (!creator) {
@@ -245,7 +247,7 @@ export const updateCreator = async (req, res) => {
     // Vérifier que l'utilisateur est le propriétaire du profil créateur
     const User = (await import('../models/User.js')).default;
     const user = await User.findById(req.user.id);
-    
+
     if (!user.creator || user.creator.toString() !== creator._id.toString()) {
       return res.status(403).json({
         success: false,
@@ -261,7 +263,9 @@ export const updateCreator = async (req, res) => {
     creator.bannerUrl = bannerUrl || '';
     creator.links = {
       twitter: links?.twitter || '',
-      twitch: links?.twitch || ''
+      twitch: links?.twitch || '',
+      tiktok: links?.tiktok || '',
+      youtube: links?.youtube || ''
     };
 
     await creator.save();
@@ -273,7 +277,7 @@ export const updateCreator = async (req, res) => {
     });
   } catch (error) {
     console.error('Error updating creator:', error);
-    
+
     if (error.name === 'ValidationError') {
       return res.status(400).json({
         success: false,
@@ -296,8 +300,8 @@ export const deleteCreator = async (req, res) => {
   try {
     const { username } = req.params;
 
-    const creator = await Creator.findOne({ 
-      username: username.toLowerCase() 
+    const creator = await Creator.findOne({
+      username: username.toLowerCase()
     });
 
     if (!creator) {

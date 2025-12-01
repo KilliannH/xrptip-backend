@@ -60,6 +60,28 @@ const creatorSchema = new mongoose.Schema({
         message: 'Invalid Twitter/X URL'
       }
     },
+    youtube: {
+      type: String,
+      default: '',
+      validate: {
+        validator: function(v) {
+          if (!v) return true;
+          return /^https?:\/\/(www\.)?youtube\.com\/(c\/|channel\/|@)?[a-zA-Z0-9_-]+\/?$/.test(v);
+        },
+        message: 'Invalid YouTube URL'
+      }
+    },
+    tiktok: {
+      type: String,
+      default: '',
+      validate: {
+        validator: function(v) {
+          if (!v) return true;
+          return /^https?:\/\/(www\.)?tiktok\.com\/@[a-zA-Z0-9_.-]+\/?$/.test(v);
+        },
+        message: 'Invalid TikTok URL'
+      }
+    },
     twitch: {
       type: String,
       default: '',
