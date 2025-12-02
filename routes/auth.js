@@ -7,6 +7,7 @@ import {
   logout,
   updatePassword,
   forgotPassword,
+  validatePasswordToken,
   resetPassword,
   linkCreator,
   verifyEmail,
@@ -57,7 +58,8 @@ router.post('/login', loginValidation, login);
 router.post('/verify-email', verifyEmailValidation, verifyEmail);
 router.post('/resend-verification', resendVerification);
 router.post('/forgot-password', forgotPassword);
-router.put('/reset-password/:resetToken', resetPassword);
+router.get('/reset-password/:resetToken', validatePasswordToken);
+router.post('/reset-password/:resetToken', resetPassword);
 
 // Routes protégées
 router.get('/me', protect, getMe);

@@ -3,6 +3,9 @@ import User from '../models/User.js';
 import Creator from '../models/Creator.js';
 import { sendTokenResponse, hashString } from '../utils/auth.js';
 import emailService from '../services/emailService.js';
+import crypto from 'crypto';
+import nodemailer from 'nodemailer';
+import bcrypt from 'bcryptjs/dist/bcrypt.js';
 
 // @desc    Inscription d'un nouvel utilisateur
 // @route   POST /api/auth/register
@@ -229,85 +232,113 @@ export const updatePassword = async (req, res) => {
 export const forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
-
-    const user = await User.findOne({ email });
-
+    
+    const user = await User.findOne({ email: email.toLowerCase() });
     if (!user) {
       // Ne pas révéler si l'email existe ou non (sécurité)
-      return res.json({
-        success: true,
-        message: 'Si cet email existe, un lien de réinitialisation a été envoyé'
-      });
+      return res.json({ message: 'If that email exists, a reset link has been sent' });
     }
 
-    // Générer le token de reset
-    const resetToken = user.generatePasswordResetToken();
+    // Générer un token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetTokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
+    
+    // Sauvegarder le token hashé et l'expiration (1 heure)
+    user.resetPasswordToken = resetTokenHash;
+    user.resetPasswordExpires = Date.now() + 3600000; // 1 heure
     await user.save();
 
-    // TODO: Envoyer l'email avec le lien de reset
-    // const resetUrl = `${process.env.CLIENT_URL}/reset-password/${resetToken}`;
+    // Envoyer l'email
+    const resetUrl = `${process.env.CLIENT_URL}/reset-password/${resetToken}`;
+    
+    // Configurer nodemailer (exemple)
+    const transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST || 'smtp.mailtrap.io',
+        port: process.env.SMTP_PORT || 2525,
+        auth: {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASSWORD
+        }
+    });
 
-    res.json({
-      success: true,
-      message: 'Si cet email existe, un lien de réinitialisation a été envoyé',
-      // En développement seulement :
-      ...(process.env.NODE_ENV === 'development' && { resetToken })
+    await transporter.sendMail({
+      to: user.email,
+      subject: 'Password Reset - xrpTip',
+      html: `
+        <h1>Reset Your Password</h1>
+        <p>Click the link below to reset your password:</p>
+        <a href="${resetUrl}">${resetUrl}</a>
+        <p>This link expires in 1 hour.</p>
+      `
     });
+
+    res.json({ message: 'Password reset email sent' });
   } catch (error) {
-    console.error('Erreur lors de la demande de reset:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erreur lors de la demande de réinitialisation'
-    });
+    console.error('Forgot password error:', error);
+    res.status(500).json({ message: 'Error sending reset email' });
   }
 };
 
-// @desc    Réinitialiser le mot de passe
-// @route   PUT /api/auth/reset-password/:resetToken
+// @desc    Valider le token
+// @route   GET /api/auth/reset-password/:resetToken
+// @access  Public
+export const validatePasswordToken = async (req, res) => {
+  try {
+    const resetTokenHash = crypto
+      .createHash('sha256')
+      .update(req.params.resetToken)
+      .digest('hex');
+
+    const user = await User.findOne({
+      resetPasswordToken: resetTokenHash,
+      resetPasswordExpires: { $gt: Date.now() }
+    });
+
+    if (!user) {
+      return res.status(400).json({ message: 'Invalid or expired reset token' });
+    }
+
+    res.json({ message: 'Token is valid' });
+  } catch (error) {
+    console.error('Validate token error:', error);
+    res.status(500).json({ message: 'Error validating token' });
+  }
+};
+
+// @desc    Reset password
+// @route   POST /api/auth/reset-password/:resetToken
 // @access  Public
 export const resetPassword = async (req, res) => {
   try {
-    const { newPassword } = req.body;
-    const resetToken = req.params.resetToken;
+    const { password } = req.body;
+    
+    const resetTokenHash = crypto
+      .createHash('sha256')
+      .update(req.params.resetToken)
+      .digest('hex');
 
-    if (!newPassword || newPassword.length < 8) {
-      return res.status(400).json({
-        success: false,
-        message: 'Le mot de passe doit contenir au moins 8 caractères'
-      });
-    }
-
-    // Hash le token pour comparer avec celui en DB
-    const hashedToken = hashString(resetToken);
-
-    // Trouver l'utilisateur avec le token valide
     const user = await User.findOne({
-      passwordResetToken: hashedToken,
-      passwordResetExpires: { $gt: Date.now() }
+      resetPasswordToken: resetTokenHash,
+      resetPasswordExpires: { $gt: Date.now() }
     });
 
     if (!user) {
-      return res.status(400).json({
-        success: false,
-        message: 'Token invalide ou expiré'
-      });
+      return res.status(400).json({ message: 'Invalid or expired reset token' });
     }
 
-    // Mettre à jour le mot de passe
-    user.password = newPassword;
-    user.passwordResetToken = undefined;
-    user.passwordResetExpires = undefined;
+    // Hasher et sauvegarder le nouveau mot de passe
+    user.password = password;
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
     await user.save();
 
-    sendTokenResponse(user, 200, res, 'Mot de passe réinitialisé avec succès');
+    res.json({ message: 'Password reset successful' });
   } catch (error) {
-    console.error('Erreur lors de la réinitialisation:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erreur lors de la réinitialisation du mot de passe'
-    });
+    console.error('Reset password error:', error);
+    res.status(500).json({ message: 'Error resetting password' });
   }
 };
+
 
 // @desc    Lier un profil créateur à l'utilisateur
 // @route   PUT /api/auth/link-creator/:creatorId
