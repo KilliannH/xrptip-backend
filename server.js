@@ -9,6 +9,7 @@ import xrplRoutes from './routes/xrpl.js';
 import authRoutes from './routes/auth.js';
 import uploadRoutes from './routes/upload.js';
 import xrplService from './services/xrplService.js';
+import adminRoutes from './routes/admin.js';
 
 // Initialize Express app
 const app = express();
@@ -48,7 +49,7 @@ app.use('/api/upload', uploadRoutes);
 app.use('/api/creators', creatorRoutes);
 app.use('/api/tips', tipRoutes);
 app.use('/api/xrpl', xrplRoutes);
-
+app.use('/api/admin', adminRoutes);
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({
