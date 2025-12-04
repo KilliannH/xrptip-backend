@@ -48,7 +48,7 @@ class EmailService {
     const mailOptions = {
       from: `${process.env.EMAIL_FROM_NAME || 'xrpTip'} <${process.env.EMAIL_FROM || 'noreply@xrptip.com'}>`,
       to: email,
-      subject: 'Check your email - xrpTip',,
+      subject: 'Check your email - xrpTip',
       html: `
         <!DOCTYPE html>
         <html>
