@@ -48,7 +48,7 @@ class EmailService {
     const mailOptions = {
       from: `${process.env.EMAIL_FROM_NAME || 'xrpTip'} <${process.env.EMAIL_FROM || 'noreply@xrptip.com'}>`,
       to: email,
-      subject: 'Vérifiez votre email - xrpTip',
+      subject: 'Check your email - xrpTip',,
       html: `
         <!DOCTYPE html>
         <html>
@@ -140,53 +140,53 @@ class EmailService {
         <body>
           <div class="container">
             <div class="header">
-              <h1>🎉 Bienvenue sur xrpTip !</h1>
+              <h1>🎉 Welcome to xrpTip!</h1>
             </div>
             
             <div class="content">
-              <p>Bonjour ${userName},</p>
+              <p>Hello ${userName},</p>
               
-              <p>Merci de vous être inscrit sur <strong>xrpTip</strong> ! Pour finaliser votre inscription, veuillez vérifier votre adresse email en utilisant le code ci-dessous :</p>
+              <p>Thank you for signing up for <strong>xrpTip</strong>! To complete your registration, please verify your email address using the code below:</p>
               
               <div class="code-box">
                 <div class="code">${code}</div>
-                <div class="expires">⏱️ Ce code expire dans 15 minutes</div>
+                <div class="expires">⏱️ This code expires in 15 minutes</div>
               </div>
               
-              <p>Entrez ce code dans l'application pour activer votre compte et commencer à recevoir des tips en XRP !</p>
+              <p>Enter this code in the app to activate your account and start receiving tips in XRP!</p>
               
               <div class="warning">
-                <p><strong>⚠️ Sécurité :</strong> Ne partagez jamais ce code avec personne. L'équipe xrpTip ne vous demandera jamais ce code par email ou téléphone.</p>
+                <p><strong>⚠️ Security:</strong> Never share this code with anyone. The xrpTip team will never ask you for this code by email or phone.</p>
               </div>
               
-              <p>Si vous n'avez pas créé de compte sur xrpTip, vous pouvez ignorer cet email en toute sécurité.</p>
+              <p>If you haven't created an xrpTip account, you can safely ignore this email.</p>
               
               <p style="margin-top: 30px;">
-                À bientôt,<br>
-                <strong>L'équipe xrpTip</strong> 💙
+                See you soon,<br>
+                <strong>The xrpTip Team</strong> 💙
               </p>
             </div>
             
             <div class="footer">
-              <p>© ${new Date().getFullYear()} xrpTip. Tous droits réservés.</p>
-              <p>Propulsé par le XRP Ledger 🚀</p>
+              <p>© ${new Date().getFullYear()} xrpTip. All rights reserved.</p>
+              <p>Powered by the XRP Ledger 🚀</p>
             </div>
           </div>
         </body>
         </html>
       `,
       text: `
-Bienvenue sur xrpTip !
+Welcome to xrpTip!
 
-Votre code de vérification : ${code}
+Your verification code: ${code}
 
-Ce code expire dans 15 minutes.
+This code expires in 15 minutes.
 
-Entrez ce code dans l'application pour activer votre compte.
+Enter this code in the app to activate your account.
 
-Si vous n'avez pas créé de compte, ignorez cet email.
+If you haven't created an account, please ignore this email.
 
-L'équipe xrpTip
+The xrpTip Team
       `
     };
 
