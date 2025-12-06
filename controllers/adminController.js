@@ -2,6 +2,11 @@ import User from '../models/User.js';
 import Creator from '../models/Creator.js';
 import Tip from '../models/Tip.js';
 
+const calculateDestinationTag = (userId) => {
+  const idHex = userId.toString().slice(-8);
+  return parseInt(idHex, 16) % 4294967295;
+};
+
 // @desc    Get admin statistics
 // @route   GET /api/admin/stats
 // @access  Private/Admin
@@ -11,7 +16,7 @@ export const getAdminStats = async (req, res) => {
     const totalUsers = await User.countDocuments();
     
     // Verified users
-    const verifiedUsers = await User.countDocuments({ isVerified: true });
+    const verifiedUsers = await User.countDocuments({ isEmailVerified: true });
     
     // Total creators
     const totalCreators = await Creator.countDocuments();
@@ -62,27 +67,35 @@ export const getAllUsers = async (req, res) => {
       .sort({ createdAt: -1 })
       .lean();
 
-    // Get creator profiles for users
-    const userIds = users.map(u => u._id);
-    const creators = await Creator.find({ user: { $in: userIds } })
-      .select('user username')
+    // Récupérer tous les créateurs
+    const creators = await Creator.find()
+      .select('username xrpAddress destinationTag')
       .lean();
 
-    // Create a map of userId -> username
-    const creatorMap = {};
+    // Créer une map destinationTag -> creator data
+    const creatorMap = new Map();
     creators.forEach(creator => {
-      creatorMap[creator.user.toString()] = creator.username;
+      creatorMap.set(creator.destinationTag, {
+        username: creator.username,
+        xrpAddress: creator.xrpAddress
+      });
     });
 
-    // Enrich users with creator username
-    const enrichedUsers = users.map(user => ({
-      ...user,
-      username: creatorMap[user._id.toString()] || null,
-      // Update role based on creator profile
-      role: creatorMap[user._id.toString()] 
-        ? (user.role === 'admin' ? 'admin' : 'creator')
-        : user.role
-    }));
+    // Enrichir les users avec les données creator
+    const enrichedUsers = users.map(user => {
+      const destinationTag = calculateDestinationTag(user._id);
+      const creatorData = creatorMap.get(destinationTag);
+
+      return {
+        ...user,
+        username: creatorData?.username || null,
+        xrpAddress: creatorData?.xrpAddress || null,
+        destinationTag: creatorData ? destinationTag : null,
+        role: creatorData 
+          ? (user.role === 'admin' ? 'admin' : 'creator')
+          : user.role
+      };
+    });
 
     res.json(enrichedUsers);
   } catch (error) {
@@ -212,7 +225,7 @@ export const getPlatformActivity = async (req, res) => {
 
     // Recent users
     const recentUsers = await User.find()
-      .select('email createdAt isVerified')
+      .select('email createdAt isEmailVerified')
       .sort({ createdAt: -1 })
       .limit(limit)
       .lean();
