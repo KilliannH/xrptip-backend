@@ -204,44 +204,44 @@ The xrpTip Team
     const mailOptions = {
       from: `${process.env.EMAIL_FROM_NAME || 'xrpTip'} <${process.env.EMAIL_FROM || 'noreply@xrptip.com'}>`,
       to: email,
-      subject: 'Bienvenue sur xrpTip !',
+      subject: 'Welcome to xrpTip!',
       html: `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="utf-8">
-          <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { background: linear-gradient(135deg, #00AAE4 0%, #0066CC 100%); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }
-            .content { background: white; padding: 30px; border-radius: 0 0 8px 8px; }
-            .button { display: inline-block; padding: 12px 30px; background: #00AAE4; color: white; text-decoration: none; border-radius: 6px; margin: 20px 0; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <h1>🎉 Bienvenue sur xrpTip !</h1>
-            </div>
-            <div class="content">
-              <p>Bonjour ${userName},</p>
-              <p>Votre email a été vérifié avec succès !</p>
-              <p>Vous pouvez maintenant profiter de toutes les fonctionnalités de xrpTip :</p>
-              <ul>
-                <li>Créer votre profil de créateur</li>
-                <li>Recevoir des tips en XRP</li>
-                <li>Suivre vos statistiques en temps réel</li>
-                <li>Partager votre lien personnalisé</li>
-              </ul>
-              <p style="text-align: center;">
-                <a href="${process.env.CLIENT_URL}/dashboard" class="button">Accéder à mon Dashboard</a>
-              </p>
-              <p>À bientôt,<br><strong>L'équipe xrpTip</strong> 💙</p>
-            </div>
-          </div>
-        </body>
-        </html>
-      `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: linear-gradient(135deg, #00AAE4 0%, #0066CC 100%); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }
+        .content { background: white; padding: 30px; border-radius: 0 0 8px 8px; }
+        .button { display: inline-block; padding: 12px 30px; background: #00AAE4; color: white; text-decoration: none; border-radius: 6px; margin: 20px 0; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>🎉 Welcome to xrpTip!</h1>
+        </div>
+        <div class="content">
+          <p>Hello ${userName},</p>
+          <p>Your email has been successfully verified!</p>
+          <p>You can now enjoy all xrpTip features:</p>
+          <ul>
+            <li>Create your creator profile</li>
+            <li>Receive XRP tips</li>
+            <li>Track your stats in real-time</li>
+            <li>Share your personalized link</li>
+          </ul>
+          <p style="text-align: center;">
+            <a href="${process.env.CLIENT_URL}/dashboard" class="button">Go to my Dashboard</a>
+          </p>
+          <p>See you soon,<br><strong>The xrpTip Team</strong> 💙</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `
     };
 
     try {
@@ -255,37 +255,37 @@ The xrpTip Team
 
   async sendPasswordResetCode(email, code) {
     const mailOptions = {
-      from: `${process.env.EMAIL_FROM_NAME || 'xrpTip'} <${process.env.EMAIL_FROM || 'noreply@xrptip.com'}>`,
-      to: email,
-      subject: 'Réinitialisation de votre mot de passe - xrpTip',
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="utf-8">
-          <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .code-box { background: #f8f9fa; border: 2px dashed #00AAE4; padding: 20px; text-align: center; margin: 20px 0; border-radius: 8px; }
-            .code { font-size: 36px; font-weight: bold; color: #00AAE4; letter-spacing: 4px; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <h2>🔐 Réinitialisation de mot de passe</h2>
-            <p>Vous avez demandé à réinitialiser votre mot de passe.</p>
-            <p>Utilisez le code ci-dessous :</p>
-            <div class="code-box">
-              <div class="code">${code}</div>
-              <p style="color: #666; font-size: 14px; margin-top: 10px;">Ce code expire dans 15 minutes</p>
-            </div>
-            <p>Si vous n'avez pas demandé cette réinitialisation, ignorez cet email.</p>
-            <p>L'équipe xrpTip</p>
-          </div>
-        </body>
-        </html>
-      `
-    };
+  from: `${process.env.EMAIL_FROM_NAME || 'xrpTip'} <${process.env.EMAIL_FROM || 'noreply@xrptip.com'}>`,
+  to: email,
+  subject: 'Reset your password - xrpTip',
+  html: `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .code-box { background: #f8f9fa; border: 2px dashed #00AAE4; padding: 20px; text-align: center; margin: 20px 0; border-radius: 8px; }
+        .code { font-size: 36px; font-weight: bold; color: #00AAE4; letter-spacing: 4px; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <h2>🔐 Password Reset</h2>
+        <p>You requested to reset your password.</p>
+        <p>Use the code below:</p>
+        <div class="code-box">
+          <div class="code">${code}</div>
+          <p style="color: #666; font-size: 14px; margin-top: 10px;">This code expires in 15 minutes</p>
+        </div>
+        <p>If you didn't request this reset, please ignore this email.</p>
+        <p>The xrpTip Team</p>
+      </div>
+    </body>
+    </html>
+  `
+};
 
     try {
       await this.transporter.sendMail(mailOptions);
