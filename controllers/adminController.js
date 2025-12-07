@@ -69,28 +69,55 @@ export const getAllUsers = async (req, res) => {
 
     // Récupérer tous les créateurs
     const creators = await Creator.find()
-      .select('username xrpAddress destinationTag')
+      .select('username xrpAddress destinationTag userDestinationTag walletType')
       .lean();
 
-    // Créer une map destinationTag -> creator data
-    const creatorMap = new Map();
+    // Créer une map par destinationTag ET par username (fallback)
+    const creatorMapByTag = {};
+    const creatorMapByUsername = {};
+    
     creators.forEach(creator => {
-      creatorMap.set(creator.destinationTag, {
+      const creatorData = {
         username: creator.username,
-        xrpAddress: creator.xrpAddress
-      });
+        xrpAddress: creator.xrpAddress,
+        walletType: creator.walletType,
+        destinationTag: creator.walletType === 'exchange' 
+          ? creator.userDestinationTag 
+          : creator.destinationTag
+      };
+      
+      // Map par username (toujours disponible)
+      creatorMapByUsername[creator.username] = creatorData;
+      
+      // Map par destinationTag (seulement si wallet personnel)
+      if (creator.walletType === 'personal' && creator.destinationTag) {
+        creatorMapByTag[creator.destinationTag] = creatorData;
+      }
     });
 
-    // Enrichir les users avec les données creator
+    // Enrichir les users
     const enrichedUsers = users.map(user => {
-      const destinationTag = calculateDestinationTag(user._id);
-      const creatorData = creatorMap.get(destinationTag);
+      let creatorData = null;
+
+      // Essayer de trouver par destinationTag (pour les wallets personnels)
+      const idHex = user._id.toString().slice(-8);
+      const calculatedTag = parseInt(idHex, 16) % 4294967295;
+      creatorData = creatorMapByTag[calculatedTag];
+
+      // Si pas trouvé, essayer par email/username (fallback)
+      if (!creatorData && user.email) {
+        // Chercher un créateur qui pourrait correspondre
+        const potentialCreator = Object.values(creatorMapByUsername).find(c => 
+          c.username.toLowerCase() === user.email.split('@')[0].toLowerCase()
+        );
+        if (potentialCreator) creatorData = potentialCreator;
+      }
 
       return {
         ...user,
         username: creatorData?.username || null,
         xrpAddress: creatorData?.xrpAddress || null,
-        destinationTag: creatorData ? destinationTag : null,
+        walletType: creatorData?.walletType || null,
         role: creatorData 
           ? (user.role === 'admin' ? 'admin' : 'creator')
           : user.role
