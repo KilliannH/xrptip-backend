@@ -34,33 +34,34 @@ export const getMyCreatorProfile = async (req, res) => {
 // @access  Public
 export const getAllCreators = async (req, res) => {
   try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const skip = (page - 1) * limit;
-
     const creators = await Creator.find({ isActive: true })
+      .select('-__v')
       .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit)
-      .select('-__v');
+      .lean();
 
-    const total = await Creator.countDocuments({ isActive: true });
+    // Retourner les données publiques
+    const publicCreators = creators.map(creator => ({
+      _id: creator._id,
+      username: creator.username,
+      displayName: creator.displayName,
+      bio: creator.bio,
+      xrpAddress: creator.xrpAddress,
+      destinationTag: creator.walletType === 'exchange' 
+        ? creator.userDestinationTag 
+        : creator.destinationTag,
+      avatarUrl: creator.avatarUrl,
+      bannerUrl: creator.bannerUrl,
+      links: creator.links,
+      stats: creator.stats,
+      createdAt: creator.createdAt
+    }));
 
-    res.json({
-      success: true,
-      data: creators.map(c => c.toPublicJSON()),
-      pagination: {
-        page,
-        limit,
-        total,
-        pages: Math.ceil(total / limit)
-      }
-    });
+    res.json(publicCreators);
   } catch (error) {
-    console.error('Error getting creators:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching creators'
+    console.error('Get all creators error:', error);
+    res.status(500).json({ 
+      message: 'Error fetching creators',
+      error: error.message 
     });
   }
 };
