@@ -128,7 +128,6 @@ export const checkUsernameAvailability = async (req, res) => {
 // @access  Private
 export const createCreator = async (req, res) => {
   try {
-    // Validate request
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({
@@ -138,7 +137,33 @@ export const createCreator = async (req, res) => {
       });
     }
 
-    const { username, displayName, bio, xrpAddress, avatarUrl, bannerUrl, links } = req.body;
+    const { 
+      username, 
+      displayName, 
+      bio, 
+      xrpAddress, 
+      walletType,
+      userDestinationTag,
+      avatarUrl, 
+      bannerUrl, 
+      links 
+    } = req.body;
+
+    // Validation : Si exchange, userDestinationTag est requis
+    if (walletType === 'exchange') {
+      if (!userDestinationTag) {
+        return res.status(400).json({
+          success: false,
+          message: 'Destination tag is required for exchange wallets'
+        });
+      }
+      if (userDestinationTag < 0 || userDestinationTag > 4294967295) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid destination tag (must be between 0 and 4294967295)'
+        });
+      }
+    }
 
     // Vérifier si l'utilisateur a déjà un profil créateur
     const User = (await import('../models/User.js')).default;
@@ -167,16 +192,22 @@ export const createCreator = async (req, res) => {
       });
     }
 
-    const idHex = userWithCreator._id.toString().slice(-8);
-    const destinationTag = parseInt(idHex, 16) % 4294967295;
+    // Créer le destinationTag pour wallet personnel
+    let destinationTag = null;
+    if (walletType === 'personal') {
+      const idHex = userWithCreator._id.toString().slice(-8);
+      destinationTag = parseInt(idHex, 16) % 4294967295;
+    }
 
     // Create new creator
     const creator = new Creator({
       username: username.toLowerCase(),
       displayName,
-      destinationTag: destinationTag,
       bio,
       xrpAddress,
+      walletType: walletType || 'personal',
+      destinationTag,
+      userDestinationTag: walletType === 'exchange' ? userDestinationTag : null,
       avatarUrl: avatarUrl || '',
       bannerUrl: bannerUrl || '',
       links: {
@@ -188,6 +219,13 @@ export const createCreator = async (req, res) => {
     });
 
     await creator.save();
+
+    console.log(`✅ Creator ${username} created with ${walletType} wallet`);
+    if (walletType === 'exchange') {
+      console.log(`   → Using destination tag: ${userDestinationTag}`);
+    } else {
+      console.log(`   → Generated destination tag: ${destinationTag}`);
+    }
 
     // Lier le créateur à l'utilisateur
     userWithCreator.creator = creator._id;
@@ -232,7 +270,26 @@ export const updateCreator = async (req, res) => {
     }
 
     const { username } = req.params;
-    const { displayName, bio, xrpAddress, avatarUrl, bannerUrl, links } = req.body;
+    const { 
+      displayName, 
+      bio, 
+      xrpAddress, 
+      walletType,
+      userDestinationTag,
+      avatarUrl, 
+      bannerUrl, 
+      links 
+    } = req.body;
+
+    // Validation : Si exchange, userDestinationTag est requis
+    if (walletType === 'exchange') {
+      if (!userDestinationTag) {
+        return res.status(400).json({
+          success: false,
+          message: 'Destination tag is required for exchange wallets'
+        });
+      }
+    }
 
     const creator = await Creator.findOne({
       username: username.toLowerCase()
@@ -260,6 +317,8 @@ export const updateCreator = async (req, res) => {
     creator.displayName = displayName;
     creator.bio = bio;
     creator.xrpAddress = xrpAddress;
+    creator.walletType = walletType || 'personal';
+    creator.userDestinationTag = walletType === 'exchange' ? userDestinationTag : null;
     creator.avatarUrl = avatarUrl || '';
     creator.bannerUrl = bannerUrl || '';
     creator.links = {
@@ -296,7 +355,7 @@ export const updateCreator = async (req, res) => {
 
 // @desc    Delete creator
 // @route   DELETE /api/creators/:username
-// @access  Private (TODO: Add authentication)
+// @access  Private
 export const deleteCreator = async (req, res) => {
   try {
     const { username } = req.params;

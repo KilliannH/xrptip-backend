@@ -45,7 +45,7 @@ export const verifyTransaction = async (req, res) => {
 
 // @desc    Synchroniser les transactions d'un créateur
 // @route   POST /api/xrpl/sync/:username
-// @access  Private (TODO: Add auth)
+// @access  Private
 export const syncCreatorTransactions = async (req, res) => {
   try {
     const { username } = req.params;
@@ -62,7 +62,8 @@ export const syncCreatorTransactions = async (req, res) => {
       });
     }
 
-    const result = await xrplService.syncCreatorTransactions(creator._id, {
+    // ✅ Passer le créateur complet au service pour accéder aux méthodes
+    const result = await xrplService.syncCreatorTransactions(creator, {
       limit: limit ? parseInt(limit) : 50
     });
 

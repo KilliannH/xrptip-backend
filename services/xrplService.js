@@ -52,7 +52,7 @@ class XRPLService {
           console.log('💰 Platform wallet received payment:', payment);
 
           try {
-            // Extraire le destinationTag (ID numérique du créateur)
+            // Extraire le destinationTag
             const destinationTag = payment.destinationTag;
 
             if (!destinationTag) {
@@ -64,6 +64,7 @@ class XRPLService {
                 totalAmount: payment.amount,
                 amount: payment.amount,
                 senderAddress: payment.from,
+                destinationTag: null,
                 status: 'confirmed',
                 transactionHash: payment.hash,
                 ledgerIndex: payment.ledgerIndex,
@@ -76,11 +77,28 @@ class XRPLService {
               return;
             }
 
-            // Récupérer le créateur par destinationTag
-            const creator = await Creator.findOne({ destinationTag: destinationTag });
+            // ✅ Récupérer le créateur par destinationTag (recherche dans tous les tags valides)
+            const creator = await this.findCreatorByDestinationTag(destinationTag);
 
             if (!creator) {
               console.error(`❌ Creator with destinationTag ${destinationTag} not found`);
+              // Enregistrer comme non attribué
+              const unassignedTip = new Tip({
+                creator: null,
+                creatorUsername: 'unknown',
+                totalAmount: payment.amount,
+                amount: payment.amount,
+                senderAddress: payment.from,
+                destinationTag: destinationTag,
+                status: 'confirmed',
+                transactionHash: payment.hash,
+                ledgerIndex: payment.ledgerIndex,
+                confirmedAt: new Date(),
+                redistributed: false,
+                platformFee: 0,
+                creatorAmount: 0
+              });
+              await unassignedTip.save();
               return;
             }
 
@@ -92,7 +110,7 @@ class XRPLService {
               return;
             }
 
-            // Calculer les montants (backend calcule à partir du total reçu)
+            // Calculer les montants
             const { calculateBackendFees } = await import('../config/platformWallet.js');
             const { creatorAmount, platformFee } = calculateBackendFees(payment.amount);
 
@@ -101,10 +119,11 @@ class XRPLService {
               creator: creator._id,
               creatorUsername: creator.username,
               totalAmount: payment.amount,
-              amount: creatorAmount, // Montant pour le créateur
+              amount: creatorAmount,
               platformFee: platformFee,
               creatorAmount: creatorAmount,
               senderAddress: payment.from,
+              destinationTag: destinationTag, // ✅ Enregistrer le tag utilisé
               status: 'confirmed',
               transactionHash: payment.hash,
               ledgerIndex: payment.ledgerIndex,
@@ -124,21 +143,27 @@ class XRPLService {
                 payment.amount
               );
 
-              // Mettre à jour le tip avec les infos de redistribution
+              // Mettre à jour le tip
               tip.redistributed = true;
               tip.redistributionTxHash = redistribution.txHash;
               await tip.save();
 
-              // Mettre à jour les stats du créateur
-              const stats = await Tip.getCreatorStats(creator._id);
-              creator.stats = stats;
+              // ✅ Mettre à jour les stats avec tous les destination tags valides
+              const validDestinationTags = creator.getAllValidDestinationTags();
+              const allTips = await Tip.find({
+                creator: creator._id,
+                destinationTag: { $in: validDestinationTags },
+                status: 'confirmed'
+              }).lean();
+
+              creator.stats.totalTips = allTips.length;
+              creator.stats.totalAmount = allTips.reduce((sum, t) => sum + t.amount, 0);
+              creator.stats.uniqueSupporters = [...new Set(allTips.map(t => t.senderAddress))].length;
               await creator.save();
 
               console.log(`✅ Redistribution complete: ${redistribution.txHash}`);
             } catch (redistError) {
               console.error('❌ Redistribution failed:', redistError);
-              // Le tip reste en DB avec redistributed: false
-              // Peut être retraité manuellement plus tard
             }
 
           } catch (error) {
@@ -156,11 +181,46 @@ class XRPLService {
   }
 
   /**
+   * ✅ Trouver un créateur par destination tag (supporte l'historique)
+   */
+  async findCreatorByDestinationTag(destinationTag) {
+    try {
+      // Chercher d'abord dans les destination tags actuels
+      let creator = await Creator.findOne({
+        $or: [
+          { destinationTag: destinationTag, walletType: 'personal' },
+          { userDestinationTag: destinationTag, walletType: 'exchange' }
+        ]
+      });
+
+      if (creator) {
+        return creator;
+      }
+
+      // Si pas trouvé, chercher dans l'historique
+      creator = await Creator.findOne({
+        'walletHistory': {
+          $elemMatch: {
+            $or: [
+              { destinationTag: destinationTag, walletType: 'personal' },
+              { userDestinationTag: destinationTag, walletType: 'exchange' }
+            ]
+          }
+        }
+      });
+
+      return creator;
+    } catch (error) {
+      console.error('Error finding creator by destination tag:', error);
+      return null;
+    }
+  }
+
+  /**
    * Vérifier et confirmer une transaction
    */
   async verifyAndConfirmTip(tipId, txHash) {
     try {
-      // Récupérer le tip depuis la base de données
       const tip = await Tip.findById(tipId).populate('creator');
       
       if (!tip) {
@@ -174,15 +234,22 @@ class XRPLService {
         };
       }
 
+      const creator = await Creator.findById(tip.creator);
+      if (!creator) {
+        throw new Error('Creator not found');
+      }
+
+      // ✅ Récupérer tous les destination tags valides
+      const validDestinationTags = creator.getAllValidDestinationTags();
+
       // Vérifier la transaction sur XRPL
       const verification = await xrplClient.verifyPayment(
         txHash,
-        tip.creator.xrpAddress,
+        creator.xrpAddress,
         tip.amount
       );
 
       if (!verification.valid) {
-        // Transaction invalide
         tip.status = 'failed';
         await tip.save();
 
@@ -193,19 +260,40 @@ class XRPLService {
         };
       }
 
+      // ✅ Vérifier le destination tag
+      const txDestinationTag = verification.transaction.destinationTag;
+      if (txDestinationTag && !validDestinationTags.includes(txDestinationTag)) {
+        tip.status = 'failed';
+        await tip.save();
+
+        return {
+          success: false,
+          message: `Invalid destination tag. Expected one of: ${validDestinationTags.join(', ')}, Got: ${txDestinationTag}`,
+          details: verification
+        };
+      }
+
       // Transaction valide - confirmer le tip
       await tip.confirm(
         verification.transaction.hash,
         verification.transaction.ledgerIndex
       );
 
-      // Mettre à jour les stats du créateur
-      const creator = await Creator.findById(tip.creator);
-      if (creator) {
-        const stats = await Tip.getCreatorStats(creator._id);
-        creator.stats = stats;
-        await creator.save();
-      }
+      // ✅ Enregistrer le destination tag utilisé
+      tip.destinationTag = txDestinationTag;
+      await tip.save();
+
+      // ✅ Mettre à jour les stats avec tous les tags valides
+      const allTips = await Tip.find({
+        creator: creator._id,
+        destinationTag: { $in: validDestinationTags },
+        status: 'confirmed'
+      }).lean();
+
+      creator.stats.totalTips = allTips.length;
+      creator.stats.totalAmount = allTips.reduce((sum, t) => sum + t.amount, 0);
+      creator.stats.uniqueSupporters = [...new Set(allTips.map(t => t.senderAddress))].length;
+      await creator.save();
 
       return {
         success: true,
@@ -219,109 +307,61 @@ class XRPLService {
   }
 
   /**
-   * Surveiller les paiements entrants pour un créateur
-   */
-  async monitorCreatorPayments(creatorId) {
-    try {
-      const creator = await Creator.findById(creatorId);
-      
-      if (!creator) {
-        throw new Error('Creator not found');
-      }
-
-      console.log(`👀 Monitoring payments for ${creator.username} (${creator.xrpAddress})`);
-
-      // S'abonner aux paiements
-      const unsubscribe = await xrplClient.subscribeToPayments(
-        creator.xrpAddress,
-        async (payment) => {
-          console.log('💰 New payment received:', payment);
-
-          // Créer un nouveau tip confirmé
-          const tip = new Tip({
-            creator: creator._id,
-            creatorUsername: creator.username,
-            amount: payment.amount,
-            senderAddress: payment.from,
-            status: 'confirmed',
-            transactionHash: payment.hash,
-            ledgerIndex: payment.ledgerIndex,
-            confirmedAt: new Date()
-          });
-
-          await tip.save();
-
-          // Mettre à jour les stats
-          const stats = await Tip.getCreatorStats(creator._id);
-          creator.stats = stats;
-          await creator.save();
-
-          console.log(`✅ Tip recorded for ${creator.username}: ${payment.amount} XRP`);
-        }
-      );
-
-      return unsubscribe;
-    } catch (error) {
-      console.error('Error monitoring payments:', error);
-      throw error;
-    }
-  }
-
-  /**
    * Synchroniser l'historique des transactions pour un créateur
    */
-  async syncCreatorTransactions(creatorId, options = {}) {
+  async syncCreatorTransactions(creator, options = {}) {
     try {
-      const creator = await Creator.findById(creatorId);
-      
-      if (!creator) {
-        throw new Error('Creator not found');
-      }
-
       console.log(`🔄 Syncing transactions for ${creator.username}...`);
       console.log(`📍 XRP Address: ${creator.xrpAddress}`);
+
+      // ✅ Récupérer TOUS les destination tags valides
+      const validDestinationTags = creator.getAllValidDestinationTags();
+      console.log(`✅ Valid destination tags: ${validDestinationTags.join(', ')}`);
 
       // Récupérer les transactions
       const transactions = await xrplClient.getAccountTransactions(
         creator.xrpAddress,
         {
           limit: options.limit || 50,
-          forward: false // Plus récentes en premier
+          forward: false
         }
       );
 
       let newTips = 0;
       let updatedTips = 0;
+      let skippedWrongTag = 0;
 
       console.log(`📊 Found ${transactions.length} transactions to process`);
 
       for (const txData of transactions) {
         try {
-          // La structure de réponse utilise tx_json au lieu de tx
           if (!txData || (!txData.tx && !txData.tx_json)) {
-            console.warn('⚠️ Invalid transaction data - no tx or tx_json field');
             continue;
           }
 
-          // Utiliser tx_json si disponible, sinon tx (compatibilité)
           const tx = txData.tx_json || txData.tx;
           
-          // Ignorer si ce n'est pas un paiement entrant
+          // Ignorer si ce n'est pas un paiement entrant réussi
           if (tx.TransactionType !== 'Payment' || 
               tx.Destination !== creator.xrpAddress ||
               txData.meta?.TransactionResult !== 'tesSUCCESS') {
-            console.log(`⏭️ Skipping tx: Type=${tx.TransactionType}, Dest=${tx.Destination}, Result=${txData.meta?.TransactionResult}`);
             continue;
           }
 
-          const txHash = txData.hash; // Le hash est au niveau racine de txData
-          
-          // Utiliser DeliverMax ou Amount pour le montant
+          const txHash = txData.hash;
           const amountDrops = tx.DeliverMax || tx.Amount;
           const amount = xrplClient.dropsToXrp(amountDrops);
           const senderAddress = tx.Account;
+          const destinationTag = tx.DestinationTag;
 
-          console.log(`💰 Processing payment: ${amount} XRP from ${senderAddress}`);
+          // ✅ Vérifier le destination tag
+          if (destinationTag !== undefined && !validDestinationTags.includes(destinationTag)) {
+            console.log(`⚠️ Skipping tx with wrong destination tag: ${destinationTag} (valid: ${validDestinationTags.join(', ')})`);
+            skippedWrongTag++;
+            continue;
+          }
+
+          console.log(`💰 Processing payment: ${amount} XRP from ${senderAddress} (tag: ${destinationTag})`);
 
           // Vérifier si ce tip existe déjà
           const existingTip = await Tip.findOne({ transactionHash: txHash });
@@ -333,6 +373,7 @@ class XRPLService {
               creatorUsername: creator.username,
               amount,
               senderAddress,
+              destinationTag: destinationTag, // ✅ Enregistrer le tag
               status: 'confirmed',
               transactionHash: txHash,
               ledgerIndex: txData.ledger_index,
@@ -345,28 +386,35 @@ class XRPLService {
           } else if (existingTip.status === 'pending') {
             // Confirmer un tip existant
             await existingTip.confirm(txHash, txData.ledger_index);
+            existingTip.destinationTag = destinationTag; // ✅ Mettre à jour le tag
+            await existingTip.save();
             updatedTips++;
             console.log(`🔄 Updated existing tip: ${txHash}`);
-          } else {
-            console.log(`⏭️ Tip already exists and confirmed: ${txHash}`);
           }
         } catch (txError) {
           console.error('❌ Error processing transaction:', txError);
-          // Continue avec la prochaine transaction
           continue;
         }
       }
 
-      // Mettre à jour les stats
-      const stats = await Tip.getCreatorStats(creator._id);
-      creator.stats = stats;
+      // ✅ Mettre à jour les stats avec tous les tags valides
+      const allTips = await Tip.find({
+        creator: creator._id,
+        destinationTag: { $in: validDestinationTags },
+        status: 'confirmed'
+      }).lean();
+
+      creator.stats.totalTips = allTips.length;
+      creator.stats.totalAmount = allTips.reduce((sum, t) => sum + t.amount, 0);
+      creator.stats.uniqueSupporters = [...new Set(allTips.map(t => t.senderAddress))].length;
       await creator.save();
 
-      console.log(`✅ Sync complete: ${newTips} new tips, ${updatedTips} updated`);
+      console.log(`✅ Sync complete: ${newTips} new, ${updatedTips} updated, ${skippedWrongTag} skipped (wrong tag)`);
 
       return {
         newTips,
         updatedTips,
+        skippedWrongTag,
         totalProcessed: transactions.length
       };
     } catch (error) {
@@ -380,7 +428,6 @@ class XRPLService {
    */
   async checkRecentPayment(address, fromAddress, amount, timeWindow = 300000) {
     try {
-      // Récupérer les transactions récentes
       const transactions = await xrplClient.getAccountTransactions(address, {
         limit: 20
       });
@@ -388,28 +435,28 @@ class XRPLService {
       const now = Date.now();
 
       for (const txData of transactions) {
-        const tx = txData.tx;
+        const tx = txData.tx || txData.tx_json;
         
-        if (tx.TransactionType !== 'Payment' || 
+        if (!tx || tx.TransactionType !== 'Payment' || 
             tx.Destination !== address ||
             txData.meta?.TransactionResult !== 'tesSUCCESS') {
           continue;
         }
 
-        const txAmount = xrplClient.dropsToXrp(tx.Amount);
+        const txAmount = xrplClient.dropsToXrp(tx.DeliverMax || tx.Amount);
         const txTime = xrplClient.rippleTimeToDate(tx.date).getTime();
         const txFrom = tx.Account;
 
-        // Vérifier si ça correspond
         if (Math.abs(txAmount - amount) < 0.000001 && 
             txFrom === fromAddress &&
             (now - txTime) < timeWindow) {
           return {
             found: true,
             transaction: {
-              hash: tx.hash,
+              hash: txData.hash,
               amount: txAmount,
               from: txFrom,
+              destinationTag: tx.DestinationTag,
               date: xrplClient.rippleTimeToDate(tx.date)
             }
           };
@@ -456,7 +503,6 @@ class XRPLService {
   }
 }
 
-// Singleton instance
 const xrplService = new XRPLService();
 
 export default xrplService;

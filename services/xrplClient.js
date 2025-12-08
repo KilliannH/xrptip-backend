@@ -15,10 +15,9 @@ class XRPLClient {
     }
 
     try {
-      // Choisir le réseau selon l'environnement
       const network = process.env.XRPL_NETWORK === 'mainnet'
-        ? 'wss://xrplcluster.com' // Mainnet
-        : 'wss://s.altnet.rippletest.net:51233'; // Testnet
+        ? 'wss://xrplcluster.com'
+        : 'wss://s.altnet.rippletest.net:51233';
 
       console.log(`🔗 Connexion au réseau XRPL: ${process.env.XRPL_NETWORK || 'testnet'}`);
       
@@ -47,7 +46,7 @@ class XRPLClient {
   }
 
   /**
-   * Obtenir le client XRPL (connexion si nécessaire)
+   * Obtenir le client XRPL
    */
   async getClient() {
     if (!this.isConnected) {
@@ -111,7 +110,6 @@ class XRPLClient {
     try {
       const tx = await this.getTransaction(txHash);
 
-      // Vérifier que c'est bien un paiement
       if (tx.TransactionType !== 'Payment') {
         return {
           valid: false,
@@ -119,7 +117,6 @@ class XRPLClient {
         };
       }
 
-      // Vérifier que le statut est success
       if (tx.meta?.TransactionResult !== 'tesSUCCESS') {
         return {
           valid: false,
@@ -128,7 +125,6 @@ class XRPLClient {
         };
       }
 
-      // Vérifier la destination
       if (tx.Destination !== expectedDestination) {
         return {
           valid: false,
@@ -138,12 +134,10 @@ class XRPLClient {
         };
       }
 
-      // Convertir le montant (de drops à XRP)
       const amountInXRP = tx.Amount ? parseFloat(tx.Amount) / 1000000 : 0;
 
-      // Vérifier le montant si spécifié
       if (expectedAmount !== null) {
-        const tolerance = 0.000001; // Tolérance pour les erreurs d'arrondi
+        const tolerance = 0.000001;
         if (Math.abs(amountInXRP - expectedAmount) > tolerance) {
           return {
             valid: false,
@@ -161,6 +155,7 @@ class XRPLClient {
           from: tx.Account,
           to: tx.Destination,
           amount: amountInXRP,
+          destinationTag: tx.DestinationTag, // ✅ Inclure le destination tag
           ledgerIndex: tx.ledger_index,
           date: tx.date,
           fee: parseFloat(tx.Fee) / 1000000,
@@ -197,7 +192,6 @@ class XRPLClient {
       
       console.log(`✅ Received ${response.result.transactions?.length || 0} transactions`);
       
-      // Vérifier que les transactions existent
       if (!response.result.transactions) {
         console.warn('⚠️ No transactions array in response');
         return [];
@@ -207,7 +201,6 @@ class XRPLClient {
     } catch (error) {
       console.error('❌ Error fetching transactions:', error.message);
       
-      // Si le compte n'existe pas encore (pas activé)
       if (error.data?.error === 'actNotFound') {
         console.log('ℹ️ Account not found on ledger (not activated yet)');
         return [];
@@ -219,26 +212,21 @@ class XRPLClient {
 
   /**
    * Surveiller les paiements entrants vers une adresse
-   * Retourne un listener qui peut être arrêté
    */
   async subscribeToPayments(address, callback) {
     try {
       const client = await this.getClient();
 
-      // S'abonner aux transactions du compte
       await client.request({
         command: 'subscribe',
         accounts: [address]
       });
 
-      // Écouter les transactions
       const listener = (data) => {
-        // Valider la structure des données
         if (!data || data.type !== 'transaction' || !data.validated) {
           return;
         }
 
-        // La transaction peut être dans tx_json (subscription) ou transaction (other)
         const tx = data.tx_json || data.transaction;
         
         if (!tx) {
@@ -246,10 +234,7 @@ class XRPLClient {
           return;
         }
 
-        // Vérifier que c'est un paiement vers l'adresse surveillée
         if (tx.TransactionType === 'Payment' && tx.Destination === address) {
-          
-          // Utiliser DeliverMax ou Amount pour le montant
           const amountDrops = tx.DeliverMax || tx.Amount;
           
           const payment = {
@@ -258,7 +243,7 @@ class XRPLClient {
             to: tx.Destination,
             amount: parseFloat(amountDrops) / 1000000,
             ledgerIndex: data.ledger_index,
-            destinationTag: tx.DestinationTag || null,
+            destinationTag: tx.DestinationTag || null, // ✅ Inclure le destination tag
             memos: tx.Memos || []
           };
 
@@ -268,7 +253,6 @@ class XRPLClient {
 
       client.on('transaction', listener);
 
-      // Retourner une fonction pour se désabonner
       return async () => {
         client.off('transaction', listener);
         await client.request({
@@ -286,7 +270,6 @@ class XRPLClient {
    * Convertir un timestamp XRPL en Date JavaScript
    */
   rippleTimeToDate(rippleTime) {
-    // Le temps XRPL est en secondes depuis le 1er janvier 2000
     const RIPPLE_EPOCH = 946684800;
     return new Date((rippleTime + RIPPLE_EPOCH) * 1000);
   }
@@ -306,7 +289,6 @@ class XRPLClient {
   }
 }
 
-// Singleton instance
 const xrplClient = new XRPLClient();
 
 export default xrplClient;

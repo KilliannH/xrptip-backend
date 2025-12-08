@@ -86,15 +86,13 @@ export const getTipsByCreator = async (req, res) => {
       });
     }
 
-    // ✅ Récupérer le destinationTag correct
-    const expectedDestinationTag = creator.walletType === 'exchange' 
-      ? creator.userDestinationTag 
-      : creator.destinationTag;
+    // ✅ Utiliser TOUS les destination tags valides (historique inclus)
+    const validDestinationTags = creator.getAllValidDestinationTags();
 
     // Get tips with correct destination tag filter
     const tips = await Tip.find({ 
       creator: creator._id,
-      destinationTag: expectedDestinationTag, // ✅ Filtrer par destination tag
+      destinationTag: { $in: validDestinationTags },
       status 
     })
       .sort({ createdAt: -1 })
@@ -105,7 +103,7 @@ export const getTipsByCreator = async (req, res) => {
 
     const total = await Tip.countDocuments({ 
       creator: creator._id,
-      destinationTag: expectedDestinationTag, // ✅ Filtrer par destination tag
+      destinationTag: { $in: validDestinationTags },
       status 
     });
 
@@ -148,15 +146,13 @@ export const getTipStats = async (req, res) => {
       });
     }
 
-    // ✅ Récupérer le destinationTag correct
-    const expectedDestinationTag = creator.walletType === 'exchange' 
-      ? creator.userDestinationTag 
-      : creator.destinationTag;
+    // ✅ Utiliser TOUS les destination tags valides
+    const validDestinationTags = creator.getAllValidDestinationTags();
 
-    // ✅ Get all-time stats with correct destination tag
+    // Get all-time stats
     const allTimeTips = await Tip.find({
       creator: creator._id,
-      destinationTag: expectedDestinationTag, // ✅ Filtrer par destination tag
+      destinationTag: { $in: validDestinationTags },
       status: 'confirmed'
     }).lean();
 
@@ -166,7 +162,7 @@ export const getTipStats = async (req, res) => {
       uniqueSupporters: [...new Set(allTimeTips.map(t => t.senderAddress))].length
     };
 
-    // ✅ Get monthly stats with correct destination tag
+    // Get monthly stats
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
@@ -174,9 +170,9 @@ export const getTipStats = async (req, res) => {
       {
         $match: {
           creator: creator._id,
-          destinationTag: expectedDestinationTag, // ✅ Filtrer par destination tag
+          destinationTag: { $in: validDestinationTags },
           status: 'confirmed',
-          createdAt: { $gte: thirtyDaysAgo } // Utiliser createdAt au lieu de confirmedAt
+          createdAt: { $gte: thirtyDaysAgo }
         }
       },
       {
@@ -193,7 +189,7 @@ export const getTipStats = async (req, res) => {
       totalAmount: 0
     };
 
-    // ✅ Update creator stats with correct data
+    // Update creator stats
     creator.stats.totalTips = allTimeStats.totalTips;
     creator.stats.totalAmount = allTimeStats.totalAmount;
     creator.stats.uniqueSupporters = allTimeStats.uniqueSupporters;
@@ -253,11 +249,21 @@ export const confirmTip = async (req, res) => {
     // Confirm the tip
     await tip.confirm(transactionHash, ledgerIndex);
 
-    // Update creator stats
+    // ✅ Update creator stats en utilisant tous les destination tags
     const creator = await Creator.findById(tip.creator);
     if (creator) {
-      const stats = await Tip.getCreatorStats(creator._id);
-      creator.stats = stats;
+      const validDestinationTags = creator.getAllValidDestinationTags();
+      
+      const allTips = await Tip.find({
+        creator: creator._id,
+        destinationTag: { $in: validDestinationTags },
+        status: 'confirmed'
+      }).lean();
+
+      creator.stats.totalTips = allTips.length;
+      creator.stats.totalAmount = allTips.reduce((sum, t) => sum + t.amount, 0);
+      creator.stats.uniqueSupporters = [...new Set(allTips.map(t => t.senderAddress))].length;
+      
       await creator.save();
     }
 

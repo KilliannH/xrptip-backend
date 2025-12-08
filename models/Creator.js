@@ -33,6 +33,17 @@ const creatorSchema = new mongoose.Schema({
       message: 'Invalid XRP address format'
     }
   },
+  walletType: {
+    type: String,
+    enum: ['personal', 'exchange'],
+    default: 'personal'
+  },
+  destinationTag: {
+    type: Number,
+    default: null,
+    min: 0,
+    max: 4294967295
+  },
   userDestinationTag: {
     type: Number,
     default: null,
@@ -40,26 +51,27 @@ const creatorSchema = new mongoose.Schema({
     max: 4294967295,
     validate: {
       validator: function(v) {
-        // Si pas de destinationTag, ou si c'est null/undefined, c'est OK
         if (v === null || v === undefined) return true;
-        // Sinon vérifier que c'est un nombre valide
         return Number.isInteger(v) && v >= 0 && v <= 4294967295;
       },
       message: 'Invalid destination tag'
     }
   },
-  destinationTag: {
-    type: Number,
-    required: true,
-    unique: true,
-    min: 0,
-    max: 4294967295 // Max uint32
-  },
-  walletType: {
-    type: String,
-    enum: ['personal', 'exchange'],
-    default: 'personal'
-  },
+  // ✅ Historique des wallets
+  walletHistory: [{
+    xrpAddress: String,
+    walletType: String,
+    destinationTag: Number,
+    userDestinationTag: Number,
+    activeFrom: {
+      type: Date,
+      default: Date.now
+    },
+    activeTo: {
+      type: Date,
+      default: null
+    }
+  }],
   avatarUrl: {
     type: String,
     default: ''
@@ -133,44 +145,106 @@ const creatorSchema = new mongoose.Schema({
     default: true
   }
 }, {
-  timestamps: true // Adds createdAt and updatedAt
+  timestamps: true
 });
 
 // Index for faster queries
 creatorSchema.index({ username: 1 }, { unique: true });
 creatorSchema.index({ createdAt: -1 });
+creatorSchema.index({ destinationTag: 1 });
 
 // Virtual for profile URL
 creatorSchema.virtual('profileUrl').get(function() {
   return `/u/${this.username}`;
 });
 
-// Pre-save hook pour générer le destinationTag automatiquement
-creatorSchema.pre('save', async function(next) {
-  if (this.isNew) {
-    // Si wallet personnel, générer un destination tag
-    if (this.walletType === 'personal' && !this.destinationTag) {
-      const idHex = this._id.toString().slice(-8);
-      this.destinationTag = parseInt(idHex, 16) % 4294967295;
-    }
-    // Si wallet exchange, pas besoin de générer (utilisera userDestinationTag)
+// ✅ Méthode pour obtenir tous les destination tags valides (historique + actuel)
+creatorSchema.methods.getAllValidDestinationTags = function() {
+  const tags = [];
+  
+  // Tag actuel
+  const currentTag = this.walletType === 'exchange' 
+    ? this.userDestinationTag 
+    : this.destinationTag;
+  
+  if (currentTag !== null && currentTag !== undefined) {
+    tags.push(currentTag);
   }
+
+  // Tags historiques
+  if (this.walletHistory && this.walletHistory.length > 0) {
+    this.walletHistory.forEach(wallet => {
+      const historicalTag = wallet.walletType === 'exchange'
+        ? wallet.userDestinationTag
+        : wallet.destinationTag;
+      
+      if (historicalTag !== null && historicalTag !== undefined && !tags.includes(historicalTag)) {
+        tags.push(historicalTag);
+      }
+    });
+  }
+
+  return tags;
+};
+
+// ✅ Méthode pour obtenir le destination tag actuel
+creatorSchema.methods.getCurrentDestinationTag = function() {
+  return this.walletType === 'exchange' 
+    ? this.userDestinationTag 
+    : this.destinationTag;
+};
+
+// ✅ Pre-save hook pour gérer l'historique et générer le destinationTag
+creatorSchema.pre('save', async function(next) {
+  // Générer destinationTag pour nouveaux créateurs (wallet personal)
+  if (this.isNew && this.walletType === 'personal' && !this.destinationTag) {
+    const idHex = this._id.toString().slice(-8);
+    this.destinationTag = parseInt(idHex, 16) % 4294967295;
+  }
+
+  // Si le wallet a changé (pas un nouveau document)
+  if (!this.isNew && (this.isModified('xrpAddress') || this.isModified('walletType') || this.isModified('userDestinationTag'))) {
+    // Récupérer l'ancien état du document
+    const oldCreator = await this.constructor.findById(this._id);
+    
+    if (oldCreator) {
+      // Fermer tous les wallets actifs dans l'historique
+      if (this.walletHistory) {
+        this.walletHistory.forEach(wallet => {
+          if (wallet.activeTo === null) {
+            wallet.activeTo = new Date();
+          }
+        });
+      } else {
+        this.walletHistory = [];
+      }
+
+      // Ajouter l'ancien wallet à l'historique
+      this.walletHistory.push({
+        xrpAddress: oldCreator.xrpAddress,
+        walletType: oldCreator.walletType,
+        destinationTag: oldCreator.destinationTag,
+        userDestinationTag: oldCreator.userDestinationTag,
+        activeFrom: oldCreator.updatedAt || oldCreator.createdAt,
+        activeTo: new Date()
+      });
+
+      console.log(`📝 Wallet changed for ${this.username}: Added to history`);
+    }
+  }
+
   next();
 });
-
-creatorSchema.methods.getDestinationTag = function() {
-  return this.walletType === 'exchange' ? this.userDestinationTag : this.destinationTag;
-};
 
 // Method to safely return public profile data
 creatorSchema.methods.toPublicJSON = function() {
   return {
-    _id: this._id, // Inclure l'ID pour le frontend
+    _id: this._id,
     username: this.username,
     displayName: this.displayName,
     bio: this.bio,
     xrpAddress: this.xrpAddress,
-    destinationTag: this.getDestinationTag(), // Inclure pour le QR code
+    destinationTag: this.getCurrentDestinationTag(),
     avatarUrl: this.avatarUrl,
     bannerUrl: this.bannerUrl,
     links: this.links,
