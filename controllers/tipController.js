@@ -86,18 +86,26 @@ export const getTipsByCreator = async (req, res) => {
       });
     }
 
-    // Get tips
+    // ✅ Récupérer le destinationTag correct
+    const expectedDestinationTag = creator.walletType === 'exchange' 
+      ? creator.userDestinationTag 
+      : creator.destinationTag;
+
+    // Get tips with correct destination tag filter
     const tips = await Tip.find({ 
       creator: creator._id,
+      destinationTag: expectedDestinationTag, // ✅ Filtrer par destination tag
       status 
     })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
-      .select('-creator -__v');
+      .select('-creator -__v')
+      .lean();
 
     const total = await Tip.countDocuments({ 
       creator: creator._id,
+      destinationTag: expectedDestinationTag, // ✅ Filtrer par destination tag
       status 
     });
 
@@ -115,7 +123,8 @@ export const getTipsByCreator = async (req, res) => {
     console.error('Error getting tips:', error);
     res.status(500).json({
       success: false,
-      message: 'Error fetching tips'
+      message: 'Error fetching tips',
+      error: error.message
     });
   }
 };
@@ -139,10 +148,25 @@ export const getTipStats = async (req, res) => {
       });
     }
 
-    // Get stats
-    const stats = await Tip.getCreatorStats(creator._id);
+    // ✅ Récupérer le destinationTag correct
+    const expectedDestinationTag = creator.walletType === 'exchange' 
+      ? creator.userDestinationTag 
+      : creator.destinationTag;
 
-    // Get monthly stats
+    // ✅ Get all-time stats with correct destination tag
+    const allTimeTips = await Tip.find({
+      creator: creator._id,
+      destinationTag: expectedDestinationTag, // ✅ Filtrer par destination tag
+      status: 'confirmed'
+    }).lean();
+
+    const allTimeStats = {
+      totalTips: allTimeTips.length,
+      totalAmount: allTimeTips.reduce((sum, tip) => sum + tip.amount, 0),
+      uniqueSupporters: [...new Set(allTimeTips.map(t => t.senderAddress))].length
+    };
+
+    // ✅ Get monthly stats with correct destination tag
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
@@ -150,8 +174,9 @@ export const getTipStats = async (req, res) => {
       {
         $match: {
           creator: creator._id,
+          destinationTag: expectedDestinationTag, // ✅ Filtrer par destination tag
           status: 'confirmed',
-          confirmedAt: { $gte: thirtyDaysAgo }
+          createdAt: { $gte: thirtyDaysAgo } // Utiliser createdAt au lieu de confirmedAt
         }
       },
       {
@@ -168,14 +193,16 @@ export const getTipStats = async (req, res) => {
       totalAmount: 0
     };
 
-    // Update creator stats
-    creator.stats = stats;
+    // ✅ Update creator stats with correct data
+    creator.stats.totalTips = allTimeStats.totalTips;
+    creator.stats.totalAmount = allTimeStats.totalAmount;
+    creator.stats.uniqueSupporters = allTimeStats.uniqueSupporters;
     await creator.save();
 
     res.json({
       success: true,
       data: {
-        allTime: stats,
+        allTime: allTimeStats,
         last30Days: {
           totalTips: monthly.totalTips,
           totalAmount: monthly.totalAmount
@@ -186,7 +213,8 @@ export const getTipStats = async (req, res) => {
     console.error('Error getting tip stats:', error);
     res.status(500).json({
       success: false,
-      message: 'Error fetching tip statistics'
+      message: 'Error fetching tip statistics',
+      error: error.message
     });
   }
 };
