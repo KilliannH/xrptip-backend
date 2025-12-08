@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
-import Tip from '../models/Tip.js';
-import Creator from '../models/Creator.js';
+import Tip from './models/Tip.js';
+import Creator from './models/Creator.js';
 
 dotenv.config();
 
