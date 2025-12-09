@@ -1,83 +1,104 @@
-/**
- * Migration: Ajouter destinationTag aux créateurs existants
- * 
- * Usage: node migrations/addDestinationTag.js
- */
-
+import mongoose from 'mongoose';
 import dotenv from 'dotenv';
+import Creator from '../models/Creator.js';
+import User from '../models/User.js';
+
 dotenv.config();
 
-import mongoose from 'mongoose';
-import Creator from '../models/Creator.js';
+const calculateDestinationTag = (userId) => {
+  const idHex = userId.toString().slice(-8);
+  return parseInt(idHex, 16) % 4294967295;
+};
 
-async function migrateDestinationTags() {
+const addUserRefToCreators = async () => {
   try {
-    console.log('🔄 Migration: Ajout des destinationTag aux créateurs existants\n');
-
-    // Connexion à MongoDB
     await mongoose.connect(process.env.MONGODB_URI);
-    console.log('✅ Connecté à MongoDB\n');
+    console.log('✅ Database connected');
 
     // Récupérer tous les créateurs
-    const creators = await Creator.find({});
-    console.log(`📊 Trouvé ${creators.length} créateurs\n`);
+    const creators = await Creator.find();
+    console.log(`📊 Found ${creators.length} creators`);
+
+    // Récupérer tous les users
+    const users = await User.find();
+    console.log(`📊 Found ${users.length} users`);
 
     let updated = 0;
-    let skipped = 0;
-    let errors = 0;
+    let alreadyLinked = 0;
+    let notFound = 0;
 
     for (const creator of creators) {
-      try {
-        // Vérifier si destinationTag existe déjà
-        if (creator.destinationTag) {
-          console.log(`⏭️  ${creator.username}: destinationTag déjà défini (${creator.destinationTag})`);
-          skipped++;
-          continue;
+      // Si le créateur a déjà une référence user, skip
+      if (creator.user) {
+        alreadyLinked++;
+        console.log(`✅ Creator ${creator.username} already has user reference`);
+        continue;
+      }
+
+      let matchedUser = null;
+
+      // Stratégie 1 : Matcher par destinationTag pour wallets personnels
+      if (creator.walletType === 'personal' && creator.destinationTag !== null && creator.destinationTag !== undefined) {
+        matchedUser = users.find(u => {
+          const calculatedTag = calculateDestinationTag(u._id);
+          return calculatedTag === creator.destinationTag;
+        });
+
+        if (matchedUser) {
+          console.log(`✅ [Personal Wallet] Matched ${creator.username} to ${matchedUser.email} via destinationTag ${creator.destinationTag}`);
         }
+      }
 
-        // Générer destinationTag depuis l'ObjectId
-        const idHex = creator._id.toString().slice(-8);
-        const destinationTag = parseInt(idHex, 16) % 4294967295;
+      // Stratégie 2 : Pour wallets exchange, chercher par la relation User.creator
+      if (!matchedUser) {
+        matchedUser = users.find(u => 
+          u.creator && u.creator.toString() === creator._id.toString()
+        );
 
-        // Vérifier l'unicité
-        const existing = await Creator.findOne({ destinationTag });
-        if (existing && existing._id.toString() !== creator._id.toString()) {
-          console.error(`❌ ${creator.username}: Collision de destinationTag (${destinationTag}) avec ${existing.username}`);
-          errors++;
-          continue;
+        if (matchedUser) {
+          console.log(`✅ [User.creator] Matched ${creator.username} to ${matchedUser.email}`);
         }
+      }
 
-        // Mettre à jour
-        creator.destinationTag = destinationTag;
+      // Stratégie 3 : Chercher par similarité email/username (fallback)
+      if (!matchedUser && creator.username) {
+        matchedUser = users.find(u => 
+          u.email && u.email.split('@')[0].toLowerCase() === creator.username.toLowerCase()
+        );
+
+        if (matchedUser) {
+          console.log(`⚠️  [Email Match] Matched ${creator.username} to ${matchedUser.email} (verify manually)`);
+        }
+      }
+
+      // Si on a trouvé un match, mettre à jour
+      if (matchedUser) {
+        creator.user = matchedUser._id;
         await creator.save();
-
-        console.log(`✅ ${creator.username}: destinationTag = ${destinationTag}`);
         updated++;
-
-      } catch (error) {
-        console.error(`❌ ${creator.username}: Erreur -`, error.message);
-        errors++;
+        console.log(`💾 Updated creator ${creator.username} with user ${matchedUser.email}`);
+      } else {
+        notFound++;
+        console.error(`❌ Could not find matching user for creator: ${creator.username} (wallet: ${creator.walletType}, tag: ${creator.destinationTag || creator.userDestinationTag || 'none'})`);
       }
     }
 
-    console.log('\n' + '='.repeat(60));
-    console.log('📊 Résultats de la migration:');
-    console.log('='.repeat(60));
-    console.log(`✅ Mis à jour: ${updated}`);
-    console.log(`⏭️  Ignorés: ${skipped}`);
-    console.log(`❌ Erreurs: ${errors}`);
-    console.log('='.repeat(60) + '\n');
+    console.log('\n📊 Migration Summary:');
+    console.log(`   ✅ Already linked: ${alreadyLinked}`);
+    console.log(`   💾 Updated: ${updated}`);
+    console.log(`   ❌ Not found: ${notFound}`);
+    console.log(`   📈 Total: ${creators.length}`);
 
-    await mongoose.disconnect();
-    console.log('✅ Déconnecté de MongoDB\n');
+    if (notFound > 0) {
+      console.log('\n⚠️  Some creators could not be matched. You may need to link them manually.');
+    }
 
+    console.log('\n🎉 Migration completed!');
     process.exit(0);
-
   } catch (error) {
-    console.error('\n❌ Erreur de migration:', error);
+    console.error('❌ Migration error:', error);
     process.exit(1);
   }
-}
+};
 
-// Exécuter la migration
-migrateDestinationTags();
+addUserRefToCreators();
