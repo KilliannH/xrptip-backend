@@ -199,8 +199,9 @@ export const createCreator = async (req, res) => {
       destinationTag = parseInt(idHex, 16) % 4294967295;
     }
 
-    // Create new creator
+    // ✅ Create new creator avec référence user
     const creator = new Creator({
+      user: userWithCreator._id, // ✅ AJOUT DE LA RÉFÉRENCE USER
       username: username.toLowerCase(),
       displayName,
       bio,
@@ -306,7 +307,8 @@ export const updateCreator = async (req, res) => {
     const User = (await import('../models/User.js')).default;
     const user = await User.findById(req.user.id);
 
-    if (!user.creator || user.creator.toString() !== creator._id.toString()) {
+    // ✅ Vérification améliorée avec la référence user
+    if (!creator.user || creator.user.toString() !== user._id.toString()) {
       return res.status(403).json({
         success: false,
         message: 'Vous n\'êtes pas autorisé à modifier ce profil'
@@ -368,6 +370,17 @@ export const deleteCreator = async (req, res) => {
       return res.status(404).json({
         success: false,
         message: 'Creator not found'
+      });
+    }
+
+    // ✅ Vérifier que l'utilisateur est le propriétaire
+    const User = (await import('../models/User.js')).default;
+    const user = await User.findById(req.user.id);
+
+    if (!creator.user || creator.user.toString() !== user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Vous n\'êtes pas autorisé à supprimer ce profil'
       });
     }
 

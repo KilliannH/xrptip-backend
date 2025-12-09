@@ -67,17 +67,16 @@ export const getAllUsers = async (req, res) => {
       .sort({ createdAt: -1 })
       .lean();
 
-    // Récupérer tous les créateurs
+    // ✅ Récupérer tous les créateurs avec référence user
     const creators = await Creator.find()
-      .select('username xrpAddress destinationTag userDestinationTag walletType')
+      .select('user username xrpAddress destinationTag userDestinationTag walletType')
       .lean();
 
-    // Créer une map par destinationTag ET par username (fallback)
-    const creatorMapByTag = {};
-    const creatorMapByUsername = {};
+    // ✅ Créer une map par user ID
+    const creatorMapByUserId = {};
     
     creators.forEach(creator => {
-      const creatorData = {
+      creatorMapByUserId[creator.user.toString()] = {
         username: creator.username,
         xrpAddress: creator.xrpAddress,
         walletType: creator.walletType,
@@ -85,39 +84,18 @@ export const getAllUsers = async (req, res) => {
           ? creator.userDestinationTag 
           : creator.destinationTag
       };
-      
-      // Map par username (toujours disponible)
-      creatorMapByUsername[creator.username] = creatorData;
-      
-      // Map par destinationTag (seulement si wallet personnel)
-      if (creator.walletType === 'personal' && creator.destinationTag) {
-        creatorMapByTag[creator.destinationTag] = creatorData;
-      }
     });
 
-    // Enrichir les users
+    // ✅ Enrichir les users - BEAUCOUP PLUS SIMPLE
     const enrichedUsers = users.map(user => {
-      let creatorData = null;
-
-      // Essayer de trouver par destinationTag (pour les wallets personnels)
-      const idHex = user._id.toString().slice(-8);
-      const calculatedTag = parseInt(idHex, 16) % 4294967295;
-      creatorData = creatorMapByTag[calculatedTag];
-
-      // Si pas trouvé, essayer par email/username (fallback)
-      if (!creatorData && user.email) {
-        // Chercher un créateur qui pourrait correspondre
-        const potentialCreator = Object.values(creatorMapByUsername).find(c => 
-          c.username.toLowerCase() === user.email.split('@')[0].toLowerCase()
-        );
-        if (potentialCreator) creatorData = potentialCreator;
-      }
+      const creatorData = creatorMapByUserId[user._id.toString()];
 
       return {
         ...user,
         username: creatorData?.username || null,
         xrpAddress: creatorData?.xrpAddress || null,
         walletType: creatorData?.walletType || null,
+        destinationTag: creatorData?.destinationTag || null,
         role: creatorData 
           ? (user.role === 'admin' ? 'admin' : 'creator')
           : user.role
@@ -147,13 +125,42 @@ export const getUserById = async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    // Get creator profile if exists
-    const creator = await Creator.findOne({ user: user._id }).lean();
+    // ✅ Chercher le créateur par destination tag calculé
+    const calculatedTag = calculateDestinationTag(user._id);
+    
+    // Chercher dans les deux types de wallets
+    let creator = await Creator.findOne({
+      $or: [
+        { destinationTag: calculatedTag, walletType: 'personal' },
+        // Pour exchange, on ne peut pas utiliser calculatedTag, chercher autrement
+      ]
+    }).lean();
 
-    // Get tips stats if creator
+    // Si pas trouvé, chercher tous les créateurs et comparer
+    if (!creator) {
+      const allCreators = await Creator.find().lean();
+      creator = allCreators.find(c => {
+        if (c.walletType === 'personal') {
+          return c.destinationTag === calculatedTag;
+        }
+        // Pour exchange, pas de moyen direct de matcher
+        return false;
+      });
+    }
+
+    // ✅ Get tips stats if creator avec tous les tags valides
     let tipsStats = null;
     if (creator) {
-      const tips = await Tip.find({ creator: creator._id, status: 'confirmed' });
+      // Utiliser la méthode du créateur pour obtenir tous les tags valides
+      const creatorWithMethods = await Creator.findById(creator._id);
+      const validTags = creatorWithMethods ? creatorWithMethods.getAllValidDestinationTags() : [];
+      
+      const tips = await Tip.find({ 
+        creator: creator._id, 
+        destinationTag: { $in: validTags },
+        status: 'confirmed' 
+      });
+      
       const totalAmount = tips.reduce((sum, tip) => sum + tip.amount, 0);
       
       tipsStats = {
@@ -227,8 +234,14 @@ export const deleteUser = async (req, res) => {
       return res.status(400).json({ message: 'Cannot delete your own account' });
     }
 
-    // Delete associated creator profile if exists
-    await Creator.findOneAndDelete({ user: user._id });
+    // ✅ Chercher et supprimer le créateur associé
+    const calculatedTag = calculateDestinationTag(user._id);
+    await Creator.findOneAndDelete({
+      $or: [
+        { destinationTag: calculatedTag, walletType: 'personal' }
+        // Les wallets exchange ne peuvent pas être trouvés facilement par calculatedTag
+      ]
+    });
 
     // Delete user
     await user.deleteOne();
@@ -259,15 +272,14 @@ export const getPlatformActivity = async (req, res) => {
 
     // Recent creators
     const recentCreators = await Creator.find()
-      .select('username displayName createdAt')
-      .populate('user', 'email')
+      .select('username displayName createdAt walletType')
       .sort({ createdAt: -1 })
       .limit(limit)
       .lean();
 
     // Recent tips
     const recentTips = await Tip.find()
-      .select('amount status createdAt')
+      .select('amount status createdAt destinationTag')
       .populate('creator', 'username')
       .sort({ createdAt: -1 })
       .limit(limit)
