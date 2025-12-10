@@ -53,6 +53,7 @@ export const getAllCreators = async (req, res) => {
       bannerUrl: creator.bannerUrl,
       links: creator.links,
       stats: creator.stats,
+      theme: creator.theme,
       createdAt: creator.createdAt
     }));
 
