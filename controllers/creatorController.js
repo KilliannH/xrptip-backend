@@ -146,7 +146,8 @@ export const createCreator = async (req, res) => {
       userDestinationTag,
       avatarUrl, 
       bannerUrl, 
-      links 
+      links,
+      theme 
     } = req.body;
 
     // Validation : Si exchange, userDestinationTag est requis
@@ -216,7 +217,8 @@ export const createCreator = async (req, res) => {
         twitch: links?.twitch || '',
         tiktok: links?.tiktok || '',
         youtube: links?.youtube || ''
-      }
+      },
+      theme: theme || { name: 'blue', customColor: null }
     });
 
     await creator.save();
@@ -279,7 +281,8 @@ export const updateCreator = async (req, res) => {
       userDestinationTag,
       avatarUrl, 
       bannerUrl, 
-      links 
+      links,
+      theme
     } = req.body;
 
     // Validation : Si exchange, userDestinationTag est requis
@@ -318,6 +321,7 @@ export const updateCreator = async (req, res) => {
     // Update fields
     creator.displayName = displayName;
     creator.bio = bio;
+    creator.user = user;
     creator.xrpAddress = xrpAddress;
     creator.walletType = walletType || 'personal';
     creator.userDestinationTag = walletType === 'exchange' ? userDestinationTag : null;
@@ -329,6 +333,7 @@ export const updateCreator = async (req, res) => {
       tiktok: links?.tiktok || '',
       youtube: links?.youtube || ''
     };
+    creator.theme = theme || creator.theme;
 
     await creator.save();
 

@@ -78,6 +78,28 @@ const creatorSchema = new mongoose.Schema({
       default: null
     }
   }],
+  theme: {
+    type: {
+      name: {
+        type: String,
+        enum: ['blue', 'red', 'green', 'yellow', 'orange', 'white', 'gray', 'purple', 'pink', 'cyan', 'custom'],
+        default: 'blue'
+      },
+      customColor: {
+        type: String,
+        default: null,
+        validate: {
+          validator: function(v) {
+            if (!v) return true;
+            // Valider format hex color
+            return /^#[0-9A-F]{6}$/i.test(v);
+          },
+          message: 'Invalid hex color format (use #RRGGBB)'
+        }
+      }
+    },
+    default: () => ({ name: 'blue', customColor: null })
+  },
   avatarUrl: {
     type: String,
     default: ''
@@ -253,6 +275,7 @@ creatorSchema.methods.toPublicJSON = function() {
     destinationTag: this.getCurrentDestinationTag(),
     avatarUrl: this.avatarUrl,
     bannerUrl: this.bannerUrl,
+    theme: this.theme,
     links: this.links,
     stats: this.stats,
     createdAt: this.createdAt

@@ -138,6 +138,8 @@ export const getTipStats = async (req, res) => {
     const creator = await Creator.findOne({ 
       username: username.toLowerCase() 
     });
+    const User = (await import('../models/User.js')).default;
+    const user = await User.findById(creator.user);
 
     if (!creator) {
       return res.status(404).json({
@@ -190,6 +192,7 @@ export const getTipStats = async (req, res) => {
     };
 
     // Update creator stats
+    creator.user = user;
     creator.stats.totalTips = allTimeStats.totalTips;
     creator.stats.totalAmount = allTimeStats.totalAmount;
     creator.stats.uniqueSupporters = allTimeStats.uniqueSupporters;
